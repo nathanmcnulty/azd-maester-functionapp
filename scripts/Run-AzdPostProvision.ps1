@@ -25,7 +25,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot '..\vendor\Azd.MaesterHooks\Maester-SetupHelpers.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'vendor\Azd.MaesterHooks\Maester-SetupHelpers.psm1') -Force
 
 function Get-EnvValue {
   param(
@@ -270,9 +270,33 @@ $resourcesPayload = Invoke-RestMethod -Method GET -Uri "https://management.azure
 $resources = @($resourcesPayload.value)
 $customDnsDocsUrl = 'https://learn.microsoft.com/azure/app-service/app-service-web-tutorial-custom-domain'
 
-$functionAppResource = $resources | Where-Object { $_.type -eq 'Microsoft.Web/sites' -and $_.kind -like '*functionapp*' } | Select-Object -First 1
-$storageResource = $resources | Where-Object { $_.type -eq 'Microsoft.Storage/storageAccounts' } | Select-Object -First 1
-$hostingPlanResource = $resources | Where-Object { $_.type -eq 'Microsoft.Web/serverfarms' -and $_.name -like 'plan-*' } | Select-Object -First 1
+$functionAppResources = @($resources | Where-Object { $_.type -eq 'Microsoft.Web/sites' -and $_.kind -like '*functionapp*' })
+$functionAppResource = @($functionAppResources | Where-Object {
+    $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.environment -eq $EnvironmentName
+  }) | Select-Object -First 1
+if (-not $functionAppResource) {
+  $functionAppResource = @($functionAppResources | Where-Object {
+      $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.managedBy -eq 'azd' -and $_.tags.workload -eq 'maester'
+    }) | Select-Object -First 1
+}
+if (-not $functionAppResource -and $functionAppResources.Count -eq 1) {
+  $functionAppResource = $functionAppResources[0]
+}
+$storageResources = @($resources | Where-Object { $_.type -eq 'Microsoft.Storage/storageAccounts' })
+$storageResource = @($storageResources | Where-Object { $_.name -like 'stmaester*' }) | Select-Object -First 1
+if (-not $storageResource) {
+  $storageResource = $storageResources | Select-Object -First 1
+}
+$hostingPlanResources = @($resources | Where-Object { $_.type -eq 'Microsoft.Web/serverfarms' -and $_.name -like 'plan-*' })
+$hostingPlanResource = @($hostingPlanResources | Where-Object { $_.name -eq "plan-$EnvironmentName" }) | Select-Object -First 1
+if (-not $hostingPlanResource) {
+  $hostingPlanResource = @($hostingPlanResources | Where-Object {
+      $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.environment -eq $EnvironmentName
+    }) | Select-Object -First 1
+}
+if (-not $hostingPlanResource) {
+  $hostingPlanResource = $hostingPlanResources | Select-Object -First 1
+}
 $webAppResource = $resources | Where-Object { $_.type -eq 'Microsoft.Web/sites' -and $_.kind -notlike '*functionapp*' } | Select-Object -First 1
 $webAppPlanResource = $resources | Where-Object { $_.type -eq 'Microsoft.Web/serverfarms' -and $_.name -like 'asp-*' } | Select-Object -First 1
 $includeWebAppEffective = [bool]$webAppResource

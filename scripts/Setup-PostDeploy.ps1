@@ -45,7 +45,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $projectRoot
 
-Import-Module (Join-Path $PSScriptRoot '..\vendor\Azd.MaesterHooks\Maester-SetupHelpers.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'vendor\Azd.MaesterHooks\Maester-SetupHelpers.psm1') -Force
 
 
 # ──────────────────────────────────────────────
@@ -213,16 +213,28 @@ if (-not $sitesPayload.value -or $sitesPayload.value.Count -eq 0) {
   throw "No Web App / Function App resources were found in resource group '$resolvedResourceGroupName'."
 }
 
-$functionApp = @($sitesPayload.value | Where-Object { $_.kind -like '*functionapp*' }) | Select-Object -First 1
+$functionApps = @($sitesPayload.value | Where-Object { $_.kind -like '*functionapp*' })
+$functionApp = @($functionApps | Where-Object {
+    $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.environment -eq $EnvironmentName
+  }) | Select-Object -First 1
 if (-not $functionApp) {
-  $foundNames = @($sitesPayload.value | ForEach-Object { $_.name } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  $functionApp = @($functionApps | Where-Object {
+      $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.managedBy -eq 'azd' -and $_.tags.workload -eq 'maester'
+    }) | Select-Object -First 1
+}
+if (-not $functionApp -and $functionApps.Count -eq 1) {
+  $functionApp = $functionApps[0]
+}
+if (-not $functionApp) {
+  $foundNames = @($functionApps | ForEach-Object { $_.name } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
   $foundList = if ($foundNames.Count -gt 0) { $foundNames -join ', ' } else { 'none' }
-  throw "No Function App was found in resource group '$resolvedResourceGroupName'. Found sites: $foundList. This usually indicates provisioning failed, and setup cannot continue."
+  throw "No uniquely identifiable Maester Function App was found in resource group '$resolvedResourceGroupName'. Function App candidates: $foundList. Expected an environment tag of '$EnvironmentName' or the standard azd/maester tags."
 }
 
 $functionAppName = $functionApp.name
+Set-AzdEnvValue -Name 'FUNCTION_APP_NAME' -Value $functionAppName
 
-$principalId = & (Join-Path $PSScriptRoot '..\vendor\Azd.MaesterHooks\Get-ManagedIdentityPrincipal.ps1') `
+$principalId = & (Join-Path $PSScriptRoot 'vendor\Azd.MaesterHooks\Get-ManagedIdentityPrincipal.ps1') `
   -SubscriptionId $SubscriptionId `
   -ResourceGroupName $resolvedResourceGroupName `
   -ProviderNamespace 'Microsoft.Web' `
@@ -239,7 +251,7 @@ Set-AzdEnvValue -Name 'FUNCTION_APP_MI_PRINCIPAL_ID' -Value $principalId
 $mailRecipientForGraph = if ($env:MAIL_RECIPIENT) { $env:MAIL_RECIPIENT.Trim() } else { '' }
 $includeMailSend = -not [string]::IsNullOrWhiteSpace($mailRecipientForGraph)
 
-& (Join-Path $PSScriptRoot '..\vendor\Azd.MaesterHooks\Grant-MaesterGraphPermissions.ps1') `
+& (Join-Path $PSScriptRoot 'vendor\Azd.MaesterHooks\Grant-MaesterGraphPermissions.ps1') `
   -TenantId $TenantId `
   -PrincipalObjectId $principalId `
   -PermissionProfile $PermissionProfile `
