@@ -212,7 +212,7 @@ var isConsumptionPlan = functionAppPlan == 'Y1'
 var isFlexConsumption = functionAppPlan == 'FC1'
 var isDedicatedPlan = !isConsumptionPlan && !isFlexConsumption
 
-resource hostingPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
+resource hostingPlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name: hostingPlanName
   location: location
   tags: resourceTags
@@ -309,36 +309,29 @@ var functionAppSiteConfig = isFlexConsumption
   ? functionAppSiteConfigBase
   : union(functionAppSiteConfigBase, { linuxFxVersion: 'PowerShell|7.4' })
 
-var functionAppPropertiesBase = {
-  serverFarmId: hostingPlan.id
-  httpsOnly: true
-  siteConfig: functionAppSiteConfig
-}
-
-// FC1 requires functionAppConfig with deployment storage, scale settings, and runtime
-var functionAppFlexConfig = {
-  functionAppConfig: {
-    deployment: {
-      storage: {
-        type: 'blobContainer'
-        value: '${storageAccount.properties.primaryEndpoints.blob}deploymentpackage'
-        authentication: {
-          type: 'SystemAssignedIdentity'
+var functionAppConfig = isFlexConsumption
+  ? {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: '${storageAccount.properties.primaryEndpoints.blob}deploymentpackage'
+          authentication: {
+            type: 'SystemAssignedIdentity'
+          }
         }
       }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 40
+        instanceMemoryMB: 2048
+      }
+      runtime: {
+        name: 'powershell'
+        version: '7.4'
+      }
     }
-    scaleAndConcurrency: {
-      maximumInstanceCount: 40
-      instanceMemoryMB: 2048
-    }
-    runtime: {
-      name: 'powershell'
-      version: '7.4'
-    }
-  }
-}
+  : null
 
-resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
+resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   name: functionAppName
   location: location
   tags: resourceTags
@@ -353,12 +346,15 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           '${userAssignedIdentityResourceId}': {}
         }
       }
-  properties: isFlexConsumption
-    ? union(functionAppPropertiesBase, functionAppFlexConfig)
-    : functionAppPropertiesBase
+  properties: {
+    serverFarmId: hostingPlan.id
+    httpsOnly: true
+    siteConfig: functionAppSiteConfig
+    functionAppConfig: functionAppConfig
+  }
 }
 
-resource functionAppScmBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2023-12-01' = {
+resource functionAppScmBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
   name: 'scm'
   parent: functionApp
   properties: {
@@ -366,7 +362,7 @@ resource functionAppScmBasicAuth 'Microsoft.Web/sites/basicPublishingCredentials
   }
 }
 
-resource functionAppFtpBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2023-12-01' = {
+resource functionAppFtpBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
   name: 'ftp'
   parent: functionApp
   properties: {

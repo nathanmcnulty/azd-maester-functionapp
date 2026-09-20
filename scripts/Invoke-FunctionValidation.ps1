@@ -20,7 +20,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-Import-Module (Join-Path $PSScriptRoot '..\vendor\Azd.MaesterHooks\Maester-SetupHelpers.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'vendor\Azd.MaesterHooks\Maester-SetupHelpers.psm1') -Force
 
 $azAccount = Get-AzCliSubscriptionContext -SubscriptionId $SubscriptionId -TenantId $TenantId
 if (-not $TenantId) { $TenantId = $azAccount.tenantId }
@@ -31,9 +31,17 @@ $armHeaders = @{ Authorization = "Bearer $armToken" }
 if ([string]::IsNullOrWhiteSpace($FunctionAppName)) {
   $sitesPath = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites?api-version=2023-12-01"
   $sitesPayload = Invoke-RestMethod -Method GET -Uri "https://management.azure.com$sitesPath" -Headers $armHeaders
-  $funcSite = @($sitesPayload.value | Where-Object { $_.kind -like '*functionapp*' }) | Select-Object -First 1
+  $functionApps = @($sitesPayload.value | Where-Object { $_.kind -like '*functionapp*' })
+  $funcSite = @($functionApps | Where-Object {
+      $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.managedBy -eq 'azd' -and $_.tags.workload -eq 'maester'
+    }) | Select-Object -First 1
+  if (-not $funcSite -and $functionApps.Count -eq 1) {
+    $funcSite = $functionApps[0]
+  }
   if (-not $funcSite) {
-    throw "No Function App was found in resource group '$ResourceGroupName'."
+    $foundNames = @($functionApps | ForEach-Object { $_.name } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $foundList = if ($foundNames.Count -gt 0) { $foundNames -join ', ' } else { 'none' }
+    throw "No uniquely identifiable Maester Function App was found in resource group '$ResourceGroupName'. Function App candidates: $foundList."
   }
   $FunctionAppName = $funcSite.name
 }

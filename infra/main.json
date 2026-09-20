@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "10969028926661021508"
+      "templateHash": "17209846206068972929"
     }
   },
   "parameters": {
@@ -266,7 +266,7 @@
     },
     {
       "type": "Microsoft.Web/serverfarms",
-      "apiVersion": "2023-12-01",
+      "apiVersion": "2024-04-01",
       "name": "[variables('hostingPlanName')]",
       "location": "[parameters('location')]",
       "tags": "[variables('resourceTags')]",
@@ -278,13 +278,18 @@
     },
     {
       "type": "Microsoft.Web/sites",
-      "apiVersion": "2023-12-01",
+      "apiVersion": "2024-04-01",
       "name": "[variables('functionAppName')]",
       "location": "[parameters('location')]",
       "tags": "[variables('resourceTags')]",
       "kind": "functionapp,linux",
       "identity": "[if(empty(parameters('userAssignedIdentityResourceId')), createObject('type', 'SystemAssigned'), createObject('type', 'SystemAssigned, UserAssigned', 'userAssignedIdentities', createObject(format('{0}', parameters('userAssignedIdentityResourceId')), createObject())))]",
-      "properties": "[if(variables('isFlexConsumption'), union(createObject('serverFarmId', resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName')), 'httpsOnly', true(), 'siteConfig', if(variables('isFlexConsumption'), createObject('ftpsState', 'Disabled', 'alwaysOn', variables('isDedicatedPlan'), 'appSettings', union(union(variables('functionAppFlexOnlySettings'), createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'STORAGE_ACCOUNT_NAME', 'value', variables('storageAccountName')), createObject('name', 'INCLUDE_EXCHANGE', 'value', parameters('includeExchangeOption')), createObject('name', 'INCLUDE_TEAMS', 'value', parameters('includeTeamsOption')), createObject('name', 'INCLUDE_AZURE', 'value', parameters('includeAzureOption')), createObject('name', 'MAIL_RECIPIENT', 'value', parameters('mailRecipient')), createObject('name', 'WEB_APP_NAME', 'value', if(variables('includeWebApp'), variables('webAppName'), '')), createObject('name', 'WEB_APP_RESOURCE_GROUP_NAME', 'value', if(variables('includeWebApp'), resourceGroup().name, '')))), if(variables('isConsumptionPlan'), createArray(createObject('name', 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'WEBSITE_CONTENTSHARE', 'value', toLower(variables('functionAppName')))), createArray()))), union(createObject('ftpsState', 'Disabled', 'alwaysOn', variables('isDedicatedPlan'), 'appSettings', union(union(variables('functionAppFlexOnlySettings'), createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'STORAGE_ACCOUNT_NAME', 'value', variables('storageAccountName')), createObject('name', 'INCLUDE_EXCHANGE', 'value', parameters('includeExchangeOption')), createObject('name', 'INCLUDE_TEAMS', 'value', parameters('includeTeamsOption')), createObject('name', 'INCLUDE_AZURE', 'value', parameters('includeAzureOption')), createObject('name', 'MAIL_RECIPIENT', 'value', parameters('mailRecipient')), createObject('name', 'WEB_APP_NAME', 'value', if(variables('includeWebApp'), variables('webAppName'), '')), createObject('name', 'WEB_APP_RESOURCE_GROUP_NAME', 'value', if(variables('includeWebApp'), resourceGroup().name, '')))), if(variables('isConsumptionPlan'), createArray(createObject('name', 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'WEBSITE_CONTENTSHARE', 'value', toLower(variables('functionAppName')))), createArray()))), createObject('linuxFxVersion', 'PowerShell|7.4')))), createObject('functionAppConfig', createObject('deployment', createObject('storage', createObject('type', 'blobContainer', 'value', format('{0}deploymentpackage', reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob), 'authentication', createObject('type', 'SystemAssignedIdentity'))), 'scaleAndConcurrency', createObject('maximumInstanceCount', 40, 'instanceMemoryMB', 2048), 'runtime', createObject('name', 'powershell', 'version', '7.4')))), createObject('serverFarmId', resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName')), 'httpsOnly', true(), 'siteConfig', if(variables('isFlexConsumption'), createObject('ftpsState', 'Disabled', 'alwaysOn', variables('isDedicatedPlan'), 'appSettings', union(union(variables('functionAppFlexOnlySettings'), createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'STORAGE_ACCOUNT_NAME', 'value', variables('storageAccountName')), createObject('name', 'INCLUDE_EXCHANGE', 'value', parameters('includeExchangeOption')), createObject('name', 'INCLUDE_TEAMS', 'value', parameters('includeTeamsOption')), createObject('name', 'INCLUDE_AZURE', 'value', parameters('includeAzureOption')), createObject('name', 'MAIL_RECIPIENT', 'value', parameters('mailRecipient')), createObject('name', 'WEB_APP_NAME', 'value', if(variables('includeWebApp'), variables('webAppName'), '')), createObject('name', 'WEB_APP_RESOURCE_GROUP_NAME', 'value', if(variables('includeWebApp'), resourceGroup().name, '')))), if(variables('isConsumptionPlan'), createArray(createObject('name', 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'WEBSITE_CONTENTSHARE', 'value', toLower(variables('functionAppName')))), createArray()))), union(createObject('ftpsState', 'Disabled', 'alwaysOn', variables('isDedicatedPlan'), 'appSettings', union(union(variables('functionAppFlexOnlySettings'), createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'STORAGE_ACCOUNT_NAME', 'value', variables('storageAccountName')), createObject('name', 'INCLUDE_EXCHANGE', 'value', parameters('includeExchangeOption')), createObject('name', 'INCLUDE_TEAMS', 'value', parameters('includeTeamsOption')), createObject('name', 'INCLUDE_AZURE', 'value', parameters('includeAzureOption')), createObject('name', 'MAIL_RECIPIENT', 'value', parameters('mailRecipient')), createObject('name', 'WEB_APP_NAME', 'value', if(variables('includeWebApp'), variables('webAppName'), '')), createObject('name', 'WEB_APP_RESOURCE_GROUP_NAME', 'value', if(variables('includeWebApp'), resourceGroup().name, '')))), if(variables('isConsumptionPlan'), createArray(createObject('name', 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'WEBSITE_CONTENTSHARE', 'value', toLower(variables('functionAppName')))), createArray()))), createObject('linuxFxVersion', 'PowerShell|7.4')))))]",
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+        "httpsOnly": true,
+        "siteConfig": "[if(variables('isFlexConsumption'), createObject('ftpsState', 'Disabled', 'alwaysOn', variables('isDedicatedPlan'), 'appSettings', union(union(variables('functionAppFlexOnlySettings'), createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'STORAGE_ACCOUNT_NAME', 'value', variables('storageAccountName')), createObject('name', 'INCLUDE_EXCHANGE', 'value', parameters('includeExchangeOption')), createObject('name', 'INCLUDE_TEAMS', 'value', parameters('includeTeamsOption')), createObject('name', 'INCLUDE_AZURE', 'value', parameters('includeAzureOption')), createObject('name', 'MAIL_RECIPIENT', 'value', parameters('mailRecipient')), createObject('name', 'WEB_APP_NAME', 'value', if(variables('includeWebApp'), variables('webAppName'), '')), createObject('name', 'WEB_APP_RESOURCE_GROUP_NAME', 'value', if(variables('includeWebApp'), resourceGroup().name, '')))), if(variables('isConsumptionPlan'), createArray(createObject('name', 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'WEBSITE_CONTENTSHARE', 'value', toLower(variables('functionAppName')))), createArray()))), union(createObject('ftpsState', 'Disabled', 'alwaysOn', variables('isDedicatedPlan'), 'appSettings', union(union(variables('functionAppFlexOnlySettings'), createArray(createObject('name', 'AzureWebJobsStorage', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'STORAGE_ACCOUNT_NAME', 'value', variables('storageAccountName')), createObject('name', 'INCLUDE_EXCHANGE', 'value', parameters('includeExchangeOption')), createObject('name', 'INCLUDE_TEAMS', 'value', parameters('includeTeamsOption')), createObject('name', 'INCLUDE_AZURE', 'value', parameters('includeAzureOption')), createObject('name', 'MAIL_RECIPIENT', 'value', parameters('mailRecipient')), createObject('name', 'WEB_APP_NAME', 'value', if(variables('includeWebApp'), variables('webAppName'), '')), createObject('name', 'WEB_APP_RESOURCE_GROUP_NAME', 'value', if(variables('includeWebApp'), resourceGroup().name, '')))), if(variables('isConsumptionPlan'), createArray(createObject('name', 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', 'value', format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', variables('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').keys[0].value)), createObject('name', 'WEBSITE_CONTENTSHARE', 'value', toLower(variables('functionAppName')))), createArray()))), createObject('linuxFxVersion', 'PowerShell|7.4')))]",
+        "functionAppConfig": "[if(variables('isFlexConsumption'), createObject('deployment', createObject('storage', createObject('type', 'blobContainer', 'value', format('{0}deploymentpackage', reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob), 'authentication', createObject('type', 'SystemAssignedIdentity'))), 'scaleAndConcurrency', createObject('maximumInstanceCount', 40, 'instanceMemoryMB', 2048), 'runtime', createObject('name', 'powershell', 'version', '7.4')), null())]"
+      },
       "dependsOn": [
         "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
@@ -292,7 +297,7 @@
     },
     {
       "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
-      "apiVersion": "2023-12-01",
+      "apiVersion": "2024-04-01",
       "name": "[format('{0}/{1}', variables('functionAppName'), 'scm')]",
       "properties": {
         "allow": false
@@ -303,7 +308,7 @@
     },
     {
       "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
-      "apiVersion": "2023-12-01",
+      "apiVersion": "2024-04-01",
       "name": "[format('{0}/{1}', variables('functionAppName'), 'ftp')]",
       "properties": {
         "allow": false
@@ -319,7 +324,7 @@
       "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), resourceId('Microsoft.Web/sites', variables('functionAppName')), 'StorageBlobDataContributor')]",
       "properties": {
         "roleDefinitionId": "[variables('storageBlobDataContributorRoleId')]",
-        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2023-12-01', 'full').identity.principalId]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       },
       "dependsOn": [
@@ -397,7 +402,7 @@
             "value": true
           },
           "publisherPrincipalId": {
-            "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2023-12-01', 'full').identity.principalId]"
+            "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]"
           },
           "publisherResourceId": {
             "value": "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
@@ -631,7 +636,7 @@
     },
     "functionAppPrincipalId": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2023-12-01', 'full').identity.principalId]"
+      "value": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2024-04-01', 'full').identity.principalId]"
     },
     "storageAccountName": {
       "type": "string",
