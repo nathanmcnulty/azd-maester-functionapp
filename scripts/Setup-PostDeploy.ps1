@@ -140,25 +140,15 @@ if (-not $PSBoundParameters.ContainsKey('SecurityGroupObjectId') -and -not $PSBo
 
 $resolvedResourceGroupName = if ($ResourceGroupName) { $ResourceGroupName } elseif ($env:AZURE_RESOURCE_GROUP) { $env:AZURE_RESOURCE_GROUP } else { "rg-$EnvironmentName" }
 
-# ──────────────────────────────────────────────
-# Discover storage account
-# ──────────────────────────────────────────────
-
-$storageQuery = "/subscriptions/$SubscriptionId/resourceGroups/$resolvedResourceGroupName/providers/Microsoft.Storage/storageAccounts?api-version=2023-05-01"
-$storagePayload = Invoke-RestMethod -Method GET -Uri "https://management.azure.com$storageQuery" -Headers $armHeaders
-if (-not $storagePayload.value -or $storagePayload.value.Count -eq 0) {
-  throw "No Storage Account resources were found in resource group '$resolvedResourceGroupName'."
+. (Join-Path $PSScriptRoot 'Resolve-DeploymentTargets.ps1')
+$deploymentValues = Get-MaesterDeploymentValues -EnvironmentName $EnvironmentName -SubscriptionId $SubscriptionId -ResourceGroupName $resolvedResourceGroupName
+$targets = Resolve-MaesterDeploymentTargets -EnvironmentValues $deploymentValues -SubscriptionId $SubscriptionId -ResourceGroupName $resolvedResourceGroupName -EnvironmentName $EnvironmentName -SolutionName 'function-app' -GetResource {
+  param($path)
+  Invoke-RestMethod -Method GET -Uri "https://management.azure.com$path" -Headers $armHeaders
 }
-
-$preferredStorageAccountName = "stmaester$($EnvironmentName.ToLower())"
-$storageAccount = @($storagePayload.value | Where-Object { $_.name -eq $preferredStorageAccountName }) | Select-Object -First 1
-if (-not $storageAccount) {
-  $storageAccount = @($storagePayload.value | Where-Object { $_.name -like 'stmaester*' }) | Select-Object -First 1
-}
-if (-not $storageAccount) {
-  $storageAccount = $storagePayload.value[0]
-}
-Set-AzdEnvValue -Name 'STORAGE_ACCOUNT_NAME' -Value $storageAccount.name
+$storageAccount = $targets.StorageAccount
+$webApp = $targets.WebApp
+Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'STORAGE_ACCOUNT_NAME' -Value $storageAccount.name
 
 # ──────────────────────────────────────────────
 # Storage Blob Data Reader for signed-in user
@@ -233,7 +223,7 @@ if (-not $functionApp) {
 }
 
 $functionAppName = $functionApp.name
-Set-AzdEnvValue -Name 'FUNCTION_APP_NAME' -Value $functionAppName
+Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'FUNCTION_APP_NAME' -Value $functionAppName
 
 $principalId = & (Join-Path $PSScriptRoot 'vendor\Azd.MaesterHooks\Get-ManagedIdentityPrincipal.ps1') `
   -SubscriptionId $SubscriptionId `
@@ -243,7 +233,7 @@ $principalId = & (Join-Path $PSScriptRoot 'vendor\Azd.MaesterHooks\Get-ManagedId
   -ResourceName $functionAppName `
   -ApiVersion '2023-12-01'
 
-Set-AzdEnvValue -Name 'FUNCTION_APP_MI_PRINCIPAL_ID' -Value $principalId
+Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'FUNCTION_APP_MI_PRINCIPAL_ID' -Value $principalId
 
 # ──────────────────────────────────────────────
 # Grant Graph API permissions
@@ -444,16 +434,16 @@ if ($IncludeAzure -and $azureSetupStatus -eq 'pending') {
   $azureSetupStatus = if ($succeededScopes -gt 0) { 'configured' } else { 'skipped' }
 }
 
-Set-AzdEnvValue -Name 'SETUP_EXCHANGE_STATUS' -Value $exchangeSetupStatus
-Set-AzdEnvValue -Name 'SETUP_TEAMS_STATUS' -Value $teamsSetupStatus
-Set-AzdEnvValue -Name 'SETUP_AZURE_STATUS' -Value $azureSetupStatus
+Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'SETUP_EXCHANGE_STATUS' -Value $exchangeSetupStatus
+Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'SETUP_TEAMS_STATUS' -Value $teamsSetupStatus
+Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'SETUP_AZURE_STATUS' -Value $azureSetupStatus
 
-Set-AzdEnvJsonArray -Name 'EXO_APPROLE_ASSIGNMENT_IDS' -Values @($exoAppRoleAssignmentIds)
-Set-AzdEnvJsonArray -Name 'TEAMS_READER_ROLE_ASSIGNMENT_IDS' -Values @($teamsRoleAssignmentIds)
-Set-AzdEnvJsonArray -Name 'AZURE_ROLE_ASSIGNMENT_IDS' -Values @($azureRoleAssignmentIds)
+Set-MaesterAzdEnvJsonArray -EnvironmentName $EnvironmentName -Name 'EXO_APPROLE_ASSIGNMENT_IDS' -Values @($exoAppRoleAssignmentIds)
+Set-MaesterAzdEnvJsonArray -EnvironmentName $EnvironmentName -Name 'TEAMS_READER_ROLE_ASSIGNMENT_IDS' -Values @($teamsRoleAssignmentIds)
+Set-MaesterAzdEnvJsonArray -EnvironmentName $EnvironmentName -Name 'AZURE_ROLE_ASSIGNMENT_IDS' -Values @($azureRoleAssignmentIds)
 
 if ($exoServicePrincipalDisplayName) {
-  Set-AzdEnvValue -Name 'EXO_SERVICE_PRINCIPAL_DISPLAY_NAME' -Value $exoServicePrincipalDisplayName
+  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EXO_SERVICE_PRINCIPAL_DISPLAY_NAME' -Value $exoServicePrincipalDisplayName
 }
 
 # ──────────────────────────────────────────────
@@ -479,12 +469,7 @@ if ($IncludeTeams) {
 # Easy Auth on optional Web App
 # ──────────────────────────────────────────────
 
-$webAppsQuery = "/subscriptions/$SubscriptionId/resourceGroups/$resolvedResourceGroupName/providers/Microsoft.Web/sites?api-version=2023-12-01"
-$webAppsPayload = Invoke-RestMethod -Method GET -Uri "https://management.azure.com$webAppsQuery" -Headers $armHeaders
-
-$webAppSites = @($webAppsPayload.value | Where-Object { $_.kind -notlike '*functionapp*' })
-
-if ($webAppSites.Count -gt 0) {
+if ($webApp) {
   if (-not $SecurityGroupObjectId -and -not [string]::IsNullOrWhiteSpace($SecurityGroupDisplayName)) {
     Connect-MgGraphSilent -TenantId $TenantId -Scopes 'Group.Read.All','Directory.Read.All'
 
@@ -559,12 +544,6 @@ if ($webAppSites.Count -gt 0) {
 
   Connect-MgGraphSilent -TenantId $TenantId -Scopes 'Application.ReadWrite.All','Directory.Read.All','DelegatedPermissionGrant.ReadWrite.All'
 
-  $preferredWebAppName = "app-maester-$($EnvironmentName.ToLower())"
-  $webApp = @($webAppSites | Where-Object { $_.name -eq $preferredWebAppName }) | Select-Object -First 1
-  if (-not $webApp) {
-    $webApp = $webAppSites[0]
-  }
-
   $webAppName = $webApp.name
   $webAppHostName = $webApp.properties.defaultHostName
   $redirectUri = "https://$webAppHostName/.auth/login/aad/callback"
@@ -613,20 +592,9 @@ if ($webAppSites.Count -gt 0) {
   }
 
   Write-Host "Persisting Easy Auth Entra app identifiers to azd environment variables..."
-  & azd env set EASY_AUTH_ENTRA_APP_OBJECT_ID $aadApp.id
-  if ($LASTEXITCODE -ne 0) {
-    Write-Warning 'Failed to persist EASY_AUTH_ENTRA_APP_OBJECT_ID to azd environment.'
-  }
-
-  & azd env set EASY_AUTH_ENTRA_APP_CLIENT_ID $aadApp.appId
-  if ($LASTEXITCODE -ne 0) {
-    Write-Warning 'Failed to persist EASY_AUTH_ENTRA_APP_CLIENT_ID to azd environment.'
-  }
-
-  & azd env set EASY_AUTH_ENTRA_APP_DISPLAY_NAME $aadApp.displayName
-  if ($LASTEXITCODE -ne 0) {
-    Write-Warning 'Failed to persist EASY_AUTH_ENTRA_APP_DISPLAY_NAME to azd environment.'
-  }
+  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EASY_AUTH_ENTRA_APP_OBJECT_ID' -Value $aadApp.id
+  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EASY_AUTH_ENTRA_APP_CLIENT_ID' -Value $aadApp.appId
+  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EASY_AUTH_ENTRA_APP_DISPLAY_NAME' -Value $aadApp.displayName
 
   $servicePrincipalResponse = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/servicePrincipals?`$filter=appId eq '$($aadApp.appId)'"
   $easyAuthServicePrincipal = $null
