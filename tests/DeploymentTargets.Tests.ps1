@@ -7,6 +7,8 @@ BeforeAll {
   $script:scope = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName"
   $script:storageId = "$scope/providers/Microsoft.Storage/storageAccounts/stmaester123"
   $script:webAppId = "$scope/providers/Microsoft.Web/sites/app-maester-123"
+  $script:functionId = "$scope/providers/Microsoft.Web/sites/func-maester-123"
+  $script:principalId = '22222222-2222-4222-8222-222222222222'
 
   function Invoke-TargetResolution {
     param([hashtable]$Values, [hashtable]$Resources)
@@ -22,8 +24,55 @@ BeforeAll {
     @{
       $storageId = [pscustomobject]@{ id = $storageId; name = 'stmaester123'; type = 'Microsoft.Storage/storageAccounts'; tags = $tags }
       $webAppId = [pscustomobject]@{ id = $webAppId; name = 'app-maester-123'; type = 'Microsoft.Web/sites'; kind = 'app'; tags = $tags; properties = @{ defaultHostName = 'app-maester-123.azurewebsites.net' } }
+      $functionId = [pscustomobject]@{ id = $functionId; name = 'func-maester-123'; type = 'Microsoft.Web/sites'; kind = 'functionapp,linux'; tags = $tags; identity = @{ type = 'SystemAssigned'; principalId = $principalId } }
       "$scope/providers/Microsoft.Web/sites/unrelated" = [pscustomobject]@{ id = "$scope/providers/Microsoft.Web/sites/unrelated"; name = 'unrelated'; type = 'Microsoft.Web/sites'; kind = 'app'; tags = @{ solution = 'other' }; properties = @{ defaultHostName = 'unrelated.azurewebsites.net' } }
     }
+  }
+}
+
+Describe 'Main Function App preflight' {
+  It 'binds the named deployed Function App and managed identity' {
+    $resources = New-Resources
+    $result = Resolve-MaesterMainDeploymentTarget -EnvironmentValues @{ functionAppName = 'func-maester-123'; functionAppPrincipalId = $principalId } -NameOutput 'functionAppName' -PrincipalOutput 'functionAppPrincipalId' -ProviderType 'Microsoft.Web/sites' -ApiVersion '2023-12-01' -SubscriptionId $subscriptionId -ResourceGroupName $resourceGroupName -EnvironmentName $environmentName -SolutionName $solutionName -Kind FunctionApp -GetResource { param($path) $resources[($path -split '\?')[0]] }
+    $result.id | Should -Be $functionId
+  }
+
+  It 'fails closed on absent, mismatched, wrong-kind, or wrong-scope function' {
+    $resources = New-Resources
+    $resolver = { param($values) Resolve-MaesterMainDeploymentTarget -EnvironmentValues $values -NameOutput 'functionAppName' -PrincipalOutput 'functionAppPrincipalId' -ProviderType 'Microsoft.Web/sites' -ApiVersion '2023-12-01' -SubscriptionId $subscriptionId -ResourceGroupName $resourceGroupName -EnvironmentName $environmentName -SolutionName $solutionName -Kind FunctionApp -GetResource { param($path) $resources[($path -split '\?')[0]] } }
+    { & $resolver @{ functionAppPrincipalId = $principalId } } | Should -Throw '*functionAppName*'
+    { & $resolver @{ functionAppName = 'func-maester-123'; functionAppPrincipalId = '33333333-3333-4333-8333-333333333333' } } | Should -Throw '*managed identity*'
+    $resources[$functionId].kind = 'app'
+    { & $resolver @{ functionAppName = 'func-maester-123'; functionAppPrincipalId = $principalId } } | Should -Throw '*not a Function App*'
+    $resources[$functionId].kind = 'functionapp'
+    $resources[$functionId].id = '/subscriptions/other/resourceGroups/other/providers/Microsoft.Web/sites/func-maester-123'
+    { & $resolver @{ functionAppName = 'func-maester-123'; functionAppPrincipalId = $principalId } } | Should -Throw '*exact output*'
+  }
+
+  It 'preflights the function before storage role and environment receipt writes' {
+    $setup = Get-Content (Join-Path $PSScriptRoot '../scripts/Setup-PostDeploy.ps1') -Raw
+    $setup.IndexOf('Resolve-MaesterMainDeploymentTarget') | Should -BeLessThan $setup.IndexOf('Storage Blob Data Reader for signed-in user')
+    $setup.IndexOf('Resolve-MaesterMainDeploymentTarget') | Should -BeLessThan $setup.IndexOf("Set-MaesterAzdEnvValue -EnvironmentName `$EnvironmentName -Name 'STORAGE_ACCOUNT_NAME'")
+  }
+}
+
+Describe 'Exact hosting plan summary' {
+  It 'resolves the Function plan from its bound serverFarmId and skips a disabled Web App plan' {
+    $planId = "$scope/providers/Microsoft.Web/serverfarms/plan-maester"
+    $site = [pscustomobject]@{ properties = @{ serverFarmId = $planId } }
+    $plan = [pscustomobject]@{ id = $planId; name = 'plan-maester'; type = 'Microsoft.Web/serverfarms' }
+    $script:requested = @()
+    $result = Resolve-MaesterHostingPlan -Site $site -Label 'Function App' -SubscriptionId $subscriptionId -ResourceGroupName $resourceGroupName -GetResource { param($path) $script:requested += $path; $plan }
+    $result.id | Should -Be $planId
+    $script:requested[0] | Should -Be "$planId`?api-version=2024-04-01"
+    Resolve-MaesterHostingPlan -Site $null -Label 'Web App' -SubscriptionId $subscriptionId -ResourceGroupName $resourceGroupName -GetResource { throw 'Unrelated plan queried' } | Should -BeNullOrEmpty
+  }
+
+  It 'rejects a plan outside the selected scope or mismatched ARM response' {
+    $site = [pscustomobject]@{ properties = @{ serverFarmId = '/subscriptions/other/resourceGroups/other/providers/Microsoft.Web/serverfarms/plan-maester' } }
+    { Resolve-MaesterHostingPlan -Site $site -Label 'Function App' -SubscriptionId $subscriptionId -ResourceGroupName $resourceGroupName -GetResource { throw 'Should not query' } } | Should -Throw '*outside the selected scope*'
+    $site.properties.serverFarmId = "$scope/providers/Microsoft.Web/serverfarms/plan-maester"
+    { Resolve-MaesterHostingPlan -Site $site -Label 'Function App' -SubscriptionId $subscriptionId -ResourceGroupName $resourceGroupName -GetResource { [pscustomobject]@{ id = '/wrong'; type = 'Microsoft.Web/serverfarms' } } } | Should -Throw '*does not match*'
   }
 }
 

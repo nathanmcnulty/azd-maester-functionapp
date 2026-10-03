@@ -26,6 +26,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'vendor\Azd.MaesterHooks\Maester-SetupHelpers.psm1') -Force
+. (Join-Path $PSScriptRoot 'Resolve-DeploymentTargets.ps1')
 
 function Get-EnvValue {
   param(
@@ -113,13 +114,7 @@ $exoAppRoleAssignmentIdsFromEnv = 'n/a'
 $teamsRoleAssignmentIdsFromEnv = 'n/a'
 $azureRoleAssignmentIdsFromEnv = 'n/a'
 $exoServicePrincipalDisplayNameFromEnv = 'n/a'
-$envValues = @{}
-try {
-  $envValues = (& azd env get-values --output json 2>$null | ConvertFrom-Json -AsHashtable)
-}
-catch {
-  $envValues = @{}
-}
+$envValues = Get-MaesterDeploymentValues -EnvironmentName $EnvironmentName -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName
 
 if ($envValues.Count -gt 0) {
   $easyAuthAppObjectIdValue = Get-EnvValue -Lines $envValues -Name 'EASY_AUTH_ENTRA_APP_OBJECT_ID'
@@ -267,41 +262,18 @@ else {
 
 $armToken = az account get-access-token --subscription $SubscriptionId --resource https://management.azure.com/ --query accessToken -o tsv
 $armHeaders = @{ Authorization = "Bearer $armToken" }
-$resourcesPath = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/resources?api-version=2021-04-01"
-$resourcesPayload = Invoke-RestMethod -Method GET -Uri "https://management.azure.com$resourcesPath" -Headers $armHeaders
-$resources = @($resourcesPayload.value)
 $customDnsDocsUrl = 'https://learn.microsoft.com/azure/app-service/app-service-web-tutorial-custom-domain'
-
-$functionAppResources = @($resources | Where-Object { $_.type -eq 'Microsoft.Web/sites' -and $_.kind -like '*functionapp*' })
-$functionAppResource = @($functionAppResources | Where-Object {
-    $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.environment -eq $EnvironmentName
-  }) | Select-Object -First 1
-if (-not $functionAppResource) {
-  $functionAppResource = @($functionAppResources | Where-Object {
-      $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.managedBy -eq 'azd' -and $_.tags.workload -eq 'maester'
-    }) | Select-Object -First 1
+$getExactResource = {
+  param($path)
+  Invoke-RestMethod -Method GET -Uri "https://management.azure.com$path" -Headers $armHeaders
 }
-if (-not $functionAppResource -and $functionAppResources.Count -eq 1) {
-  $functionAppResource = $functionAppResources[0]
-}
-$storageResources = @($resources | Where-Object { $_.type -eq 'Microsoft.Storage/storageAccounts' })
-$storageResource = @($storageResources | Where-Object { $_.name -like 'stmaester*' }) | Select-Object -First 1
-if (-not $storageResource) {
-  $storageResource = $storageResources | Select-Object -First 1
-}
-$hostingPlanResources = @($resources | Where-Object { $_.type -eq 'Microsoft.Web/serverfarms' -and $_.name -like 'plan-*' })
-$hostingPlanResource = @($hostingPlanResources | Where-Object { $_.name -eq "plan-$EnvironmentName" }) | Select-Object -First 1
-if (-not $hostingPlanResource) {
-  $hostingPlanResource = @($hostingPlanResources | Where-Object {
-      $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.environment -eq $EnvironmentName
-    }) | Select-Object -First 1
-}
-if (-not $hostingPlanResource) {
-  $hostingPlanResource = $hostingPlanResources | Select-Object -First 1
-}
-$webAppResource = $resources | Where-Object { $_.type -eq 'Microsoft.Web/sites' -and $_.kind -notlike '*functionapp*' } | Select-Object -First 1
-$webAppPlanResource = $resources | Where-Object { $_.type -eq 'Microsoft.Web/serverfarms' -and $_.name -like 'asp-*' } | Select-Object -First 1
-$includeWebAppEffective = [bool]$webAppResource
+$summaryTargets = Resolve-MaesterDeploymentTargets -EnvironmentValues $envValues -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -EnvironmentName $EnvironmentName -SolutionName 'function-app' -GetResource $getExactResource
+$functionAppResource = Resolve-MaesterMainDeploymentTarget -EnvironmentValues $envValues -NameOutput 'functionAppName' -PrincipalOutput 'functionAppPrincipalId' -ProviderType 'Microsoft.Web/sites' -ApiVersion '2023-12-01' -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -EnvironmentName $EnvironmentName -SolutionName 'function-app' -Kind FunctionApp -GetResource $getExactResource
+$storageResource = $summaryTargets.StorageAccount
+$webAppResource = $summaryTargets.WebApp
+$hostingPlanResource = Resolve-MaesterHostingPlan -Site $functionAppResource -Label 'Function App' -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -GetResource $getExactResource
+$webAppPlanResource = Resolve-MaesterHostingPlan -Site $webAppResource -Label 'Web App' -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -GetResource $getExactResource
+$includeWebAppEffective = [string]$envValues['WEB_APP_ENABLED'] -eq 'true'
 $deploymentModeEffective = if ($includeWebAppEffective) { 'webapp' } else { 'quick' }
 
 $summaryDir = Join-Path -Path (Resolve-Path (Join-Path $PSScriptRoot '..')).Path -ChildPath 'outputs'

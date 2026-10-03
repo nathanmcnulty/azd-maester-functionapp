@@ -148,6 +148,16 @@ $targets = Resolve-MaesterDeploymentTargets -EnvironmentValues $deploymentValues
 }
 $storageAccount = $targets.StorageAccount
 $webApp = $targets.WebApp
+$functionApp = Resolve-MaesterMainDeploymentTarget -EnvironmentValues $deploymentValues `
+  -NameOutput 'functionAppName' -PrincipalOutput 'functionAppPrincipalId' `
+  -ProviderType 'Microsoft.Web/sites' -ApiVersion '2023-12-01' `
+  -SubscriptionId $SubscriptionId -ResourceGroupName $resolvedResourceGroupName `
+  -EnvironmentName $EnvironmentName -SolutionName 'function-app' -Kind FunctionApp -GetResource {
+    param($path)
+    Invoke-RestMethod -Method GET -Uri "https://management.azure.com$path" -Headers $armHeaders
+  }
+$functionAppName = [string]$functionApp.name
+$principalId = [string]$functionApp.identity.principalId
 Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'STORAGE_ACCOUNT_NAME' -Value $storageAccount.name
 
 # ──────────────────────────────────────────────
@@ -195,44 +205,9 @@ else {
 }
 
 # ──────────────────────────────────────────────
-# Discover Function App and get managed identity principal
+# Persist verified Function App identity
 # ──────────────────────────────────────────────
-
-$sitesQuery = "/subscriptions/$SubscriptionId/resourceGroups/$resolvedResourceGroupName/providers/Microsoft.Web/sites?api-version=2023-12-01"
-$sitesPayload = Invoke-RestMethod -Method GET -Uri "https://management.azure.com$sitesQuery" -Headers $armHeaders
-if (-not $sitesPayload.value -or $sitesPayload.value.Count -eq 0) {
-  throw "No Web App / Function App resources were found in resource group '$resolvedResourceGroupName'."
-}
-
-$functionApps = @($sitesPayload.value | Where-Object { $_.kind -like '*functionapp*' })
-$functionApp = @($functionApps | Where-Object {
-    $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.environment -eq $EnvironmentName
-  }) | Select-Object -First 1
-if (-not $functionApp) {
-  $functionApp = @($functionApps | Where-Object {
-      $_.PSObject.Properties['tags'] -and $_.tags -and $_.tags.managedBy -eq 'azd' -and $_.tags.workload -eq 'maester'
-    }) | Select-Object -First 1
-}
-if (-not $functionApp -and $functionApps.Count -eq 1) {
-  $functionApp = $functionApps[0]
-}
-if (-not $functionApp) {
-  $foundNames = @($functionApps | ForEach-Object { $_.name } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-  $foundList = if ($foundNames.Count -gt 0) { $foundNames -join ', ' } else { 'none' }
-  throw "No uniquely identifiable Maester Function App was found in resource group '$resolvedResourceGroupName'. Function App candidates: $foundList. Expected an environment tag of '$EnvironmentName' or the standard azd/maester tags."
-}
-
-$functionAppName = $functionApp.name
 Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'FUNCTION_APP_NAME' -Value $functionAppName
-
-$principalId = & (Join-Path $PSScriptRoot 'vendor\Azd.MaesterHooks\Get-ManagedIdentityPrincipal.ps1') `
-  -SubscriptionId $SubscriptionId `
-  -ResourceGroupName $resolvedResourceGroupName `
-  -ProviderNamespace 'Microsoft.Web' `
-  -ResourceType 'sites' `
-  -ResourceName $functionAppName `
-  -ApiVersion '2023-12-01'
-
 Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'FUNCTION_APP_MI_PRINCIPAL_ID' -Value $principalId
 
 # ──────────────────────────────────────────────
