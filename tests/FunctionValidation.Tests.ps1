@@ -6,8 +6,10 @@ Describe 'Function validation result correlation' {
     $env:VALIDATION_TEST_MODE = 'success'
     $output = & pwsh -NoProfile -File $harness 2>&1
     $LASTEXITCODE | Should -Be 0
-    @($output) -join "`n" | Should -Match 'ValidationPassed  : True'
-    @($output) -join "`n" | Should -Match 'InvocationId'
+    $result = @($output | Where-Object { $_.ToString().StartsWith('{') }) | ConvertFrom-Json
+    $result.ValidationPassed | Should -BeTrue
+    $result.ExecutionComplete | Should -BeTrue
+    ([guid]$result.InvocationId) | Should -Not -Be ([guid]::Empty)
   }
 
   It 'fails on a reported invocation error' {

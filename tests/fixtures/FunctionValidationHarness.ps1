@@ -56,11 +56,13 @@ function Invoke-RestMethod {
   }
   throw "Unexpected REST request: $Method $Uri"
 }
+$PSStyle.OutputRendering = 'PlainText'
 try {
-  & (Join-Path $root 'scripts/Invoke-FunctionValidation.ps1') `
+  $result = & (Join-Path $root 'scripts/Invoke-FunctionValidation.ps1') `
     -SubscriptionId '11111111-1111-4111-8111-111111111111' `
     -ResourceGroupName 'rg-test' -FunctionAppName 'func-test' -StorageAccountName 'sttest' `
     -TimeoutMinutes 1 -PassThru
+  $result | ConvertTo-Json -Compress
   exit 0
 }
 catch {
