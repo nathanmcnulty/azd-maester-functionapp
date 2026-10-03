@@ -218,6 +218,8 @@ if ($validateOnProvision -and $validateOnProvision.Trim().ToLower() -eq 'true') 
     ResourceGroupName = $ResourceGroupName
     TimeoutMinutes    = 5
   }
+  $testParams['FunctionAppName'] = Get-EnvValue -Lines $envValues -Name 'FUNCTION_APP_NAME'
+  $testParams['StorageAccountName'] = Get-EnvValue -Lines $envValues -Name 'STORAGE_ACCOUNT_NAME'
   if ($TenantId) {
     $testParams['TenantId'] = $TenantId
   }
@@ -361,7 +363,7 @@ $summaryLines += "- Web App: $(if ($webAppResource) { $webAppResource.name } els
 $summaryLines += ""
 $summaryLines += '## How Components Interoperate'
 $summaryLines += '- Function App executes Maester tests on a weekly timer schedule (Sunday 9am UTC) and on-demand via admin trigger.'
-$summaryLines += '- Managed dependencies (requirements.psd1) handle module installation automatically on cold start.'
+$summaryLines += '- Exact SHA-256 verified PowerShell modules are bundled in the Function App deployment package.'
 $summaryLines += '- Function App managed identity calls Microsoft Graph using the configured permission profile.'
 $summaryLines += '- Function App managed identity uploads gzip-compressed dated reports to storage container `archive` and `latest.html` to `latest`.'
 if ($webAppResource) {

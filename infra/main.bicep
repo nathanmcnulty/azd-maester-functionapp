@@ -156,6 +156,14 @@ resource containerLatest 'Microsoft.Storage/storageAccounts/blobServices/contain
   }
 }
 
+resource containerValidation 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  name: 'validation'
+  parent: blobService
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 resource containerDeploymentPackage 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (isFlexConsumption) {
   name: 'deploymentpackage'
   parent: blobService

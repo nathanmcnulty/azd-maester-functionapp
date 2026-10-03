@@ -158,6 +158,7 @@ if (-not $storageAccount) {
 if (-not $storageAccount) {
   $storageAccount = $storagePayload.value[0]
 }
+Set-AzdEnvValue -Name 'STORAGE_ACCOUNT_NAME' -Value $storageAccount.name
 
 # ──────────────────────────────────────────────
 # Storage Blob Data Reader for signed-in user

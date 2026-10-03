@@ -54,11 +54,11 @@ The original multi-variant catalog remains available at
 the migration is being completed. wizard.
 
 - `IncludeExchange`
-  - Ensures the `ExchangeOnlineManagement` module is available at runtime (via managed dependencies).
+  - Bundles the SHA-256 verified `ExchangeOnlineManagement` module in the deployment package.
   - Grants the Function App managed identity the Exchange app permission required for app-only Exchange Online access.
   - Creates/links an Exchange service principal for the managed identity and assigns the Exchange RBAC role `View-Only Configuration` (best-effort).
 - `IncludeTeams`
-  - Ensures the `MicrosoftTeams` module is available at runtime (via managed dependencies).
+  - Bundles the SHA-256 verified `MicrosoftTeams` module in the deployment package.
   - Assigns the Entra directory role `Teams Reader` to the Function App managed identity.
 - `IncludeAzure`
   - Grants Azure RBAC `Reader` to the Function App managed identity at one or more scopes.
@@ -149,8 +149,10 @@ The generated setup summary in `outputs/<env>-setup-summary.md` includes tracked
 
 - Weekly schedule (Sunday midnight UTC). To run at a different time or frequency, edit the `schedule` value in `src/MaesterTimerTrigger/function.json` (e.g. `"0 30 6 * * 1"` for Monday 6:30 UTC), then re-deploy the function code.
 - Default plan: FC1 (Flex Consumption) — serverless, pay-per-execution, 30-minute timeout. Alternatively set `FUNCTION_APP_PLAN` to `Y1` (Consumption, 10-minute max) or `B1` (App Service Basic, no timeout limit)
-- FC1 does not use managed dependencies; modules are bundled into the deployment zip by `scripts/Deploy-FunctionCode.ps1`. Y1/B1 use `requirements.psd1` for auto-installation.
+- All plans bundle exact modules from `runtime-packages.lock.json`; `scripts/Deploy-FunctionCode.ps1` verifies package SHA-256 before zip deployment. Managed dependencies are disabled. Update the lock only after reviewing and testing the exact new packages.
+- The Azure Functions extension bundle is constrained to the available 4.32.0 release; the Functions host obtains this platform bundle from Microsoft's CDN.
 - Runner script: `src/MaesterTimerTrigger/run.ps1`
+- On-demand validation invokes `src/MaesterValidationTrigger` with a new request ID and waits for its private `validation/<request ID>.json` completion receipt. A timeout, failed invocation, or missing receipt fails validation; a scheduled run or a fresh `latest.html` cannot satisfy it.
 - Outputs:
   - `archive/maester-report-<timestamp>.html.gz`
   - `latest/latest.html`
@@ -181,5 +183,5 @@ This solution is reasonably secure, but there are additional controls you may ch
 - Manage azd environment variables: https://learn.microsoft.com/azure/developer/azure-developer-cli/manage-environment-variables
 - Azure Functions hosting options: https://learn.microsoft.com/azure/azure-functions/functions-scale
 - Azure Functions PowerShell guide: https://learn.microsoft.com/azure/azure-functions/functions-reference-powershell
-- Azure Functions managed dependencies: https://learn.microsoft.com/azure/azure-functions/functions-reference-powershell#dependency-management
+- Azure Functions module bundling: https://learn.microsoft.com/azure/azure-functions/functions-reference-powershell#dependency-management
 - App Service custom domain: https://learn.microsoft.com/azure/app-service/app-service-web-tutorial-custom-domain
