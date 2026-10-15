@@ -2,12 +2,14 @@
 
 Deploys a production-style Maester automation solution on Azure with:
 
-- Azure Function App (PowerShell 7.4, Flex Consumption FC1 by default, timer-triggered)
+- Azure Function App (PowerShell 7.6, Flex Consumption FC1 by default, timer-triggered)
 - Managed identity + Graph permissions
 - Storage-backed report history (`archive`) and latest pointer (`latest/latest.html`)
 - Optional App Service + Easy Auth portal in WebApp mode
 
 ## Quickstart (recommended)
+
+Requires PowerShell 7.6 or later. Offline repository tests use Pester 6.2 or later.
 
 After `azd init -t nathanmcnulty/azd-maester-functionapp`, run from the template root:
 
@@ -104,7 +106,7 @@ The generated setup summary in `outputs/<env>-setup-summary.md` includes tracked
 ┌──────────────────────────────────────────────────────────────────┐
 │ Azure Functions (Flex Consumption FC1 by default)                │
 │   ┌────────────────────────────────────────────────────────┐     │
-│   │ Function App (PowerShell 7.4, Linux)                   │     │
+│   │ Function App (PowerShell 7.6, Linux)                   │     │
 │   │ Timer trigger: Sunday midnight UTC                     │     │
 │   │ MI: System-Assigned                                    │     │
 │   └──────┬─────────────────────────────────────────────────┘     │
@@ -130,7 +132,7 @@ The generated setup summary in `outputs/<env>-setup-summary.md` includes tracked
 ## Runtime behavior
 
 - Weekly schedule (Sunday midnight UTC). To run at a different time or frequency, edit the `schedule` value in `src/MaesterTimerTrigger/function.json` (e.g. `"0 30 6 * * 1"` for Monday 6:30 UTC), then re-deploy the function code.
-- Default plan: FC1 (Flex Consumption) — serverless, pay-per-execution, 30-minute timeout. Alternatively set `FUNCTION_APP_PLAN` to `Y1` (Consumption, 10-minute max) or `B1` (App Service Basic, no timeout limit)
+- Default plan: FC1 (Flex Consumption) — serverless, pay-per-execution, 30-minute timeout. Alternatively set `FUNCTION_APP_PLAN` to `B1` (App Service Basic). Both supported plans use a 30-minute function timeout.
 - All plans bundle exact modules from `runtime-packages.lock.json`; `scripts/Deploy-FunctionCode.ps1` verifies package SHA-256 before zip deployment. Managed dependencies are disabled. Update the lock only after reviewing and testing the exact new packages.
 - The Azure Functions extension bundle is constrained to the available 4.32.0 release; the Functions host obtains this platform bundle from Microsoft's CDN.
 - Runner script: `src/MaesterTimerTrigger/run.ps1`
