@@ -7,9 +7,12 @@ BeforeAll {
 
 Describe 'PowerShell 7.6 Function hosting contract' {
   It 'requires PowerShell 7.6 at maintained setup, packaging and worker entry points' {
-    $entryPoints = @(Get-ChildItem (Join-Path $root 'scripts') -File -Filter '*.ps1') + @(Get-ChildItem (Join-Path $root 'src') -Recurse -File -Filter '*.ps1')
+    $entryPoints = @(Get-ChildItem (Join-Path $root 'scripts') -File | Where-Object Extension -In '.ps1', '.psm1') + @(Get-ChildItem (Join-Path $root 'src') -Recurse -File -Filter '*.ps1')
     foreach ($entryPoint in $entryPoints) {
-      (Get-Content $entryPoint.FullName -TotalCount 1) | Should -Be '#Requires -Version 7.6' -Because $entryPoint.Name
+      $errors = $null
+      $ast = [System.Management.Automation.Language.Parser]::ParseFile($entryPoint.FullName, [ref]$null, [ref]$errors)
+      $errors | Should -BeNullOrEmpty
+      $ast.ScriptRequirements.RequiredPSVersion | Should -Be ([version]'7.6') -Because $entryPoint.Name
     }
   }
 

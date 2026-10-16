@@ -11,6 +11,15 @@ Deploys a production-style Maester automation solution on Azure with:
 
 Requires PowerShell 7.6 or later. Offline repository tests use Pester 6.2 or later.
 
+From the repository root in PowerShell 7.6+, install and explicitly select the
+same test dependency as CI:
+
+```powershell
+Install-Module Pester -RequiredVersion 6.2.0 -Scope CurrentUser -Force
+Import-Module Pester -RequiredVersion 6.2.0 -Force
+Invoke-Pester -Path ./tests -CI
+```
+
 After `azd init -t nathanmcnulty/azd-maester-functionapp`, run from the template root:
 
 `azd up`

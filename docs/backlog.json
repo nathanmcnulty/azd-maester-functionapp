@@ -79,14 +79,15 @@
         "docs/function-runtime-validation.md"
       ],
       "evidence": [
-        "2026-10-16 partial native runtime qualification at d817c055e9ebc42c7c2ba79053a0188671e29338: both FC1/B1 ARM deployments succeeded; FC1 executed PowerShell 7.6.5/.NET 10.0.11, loaded the five locked modules including Maester 2.2.0/Pester 6.2.0 and denied anonymous probe access. Both assessment triggers were disabled. B1 Kudu deployment remained incomplete after CLI timeout; no duplicate ZIP was submitted, and its runtime remains unproven. Exact owned resource group, two storage role assignments and two managed-identity principals were verified absent. Deployment code now stops after one unconfirmed submission and preserves the exact ZIP; regression tests cover timeout, generic failure and confirmed-success cleanup. Full collection/report/viewer lifecycle acceptance remains open; see docs/function-runtime-validation.md."
+        "2026-10-16 partial native runtime qualification at d817c055e9ebc42c7c2ba79053a0188671e29338: both FC1/B1 ARM deployments succeeded; FC1 executed PowerShell 7.6.5/.NET 10.0.11, loaded the five locked modules including Maester 2.2.0/Pester 6.2.0 and denied anonymous probe access. Both assessment triggers were disabled. B1 Kudu deployment remained incomplete after CLI timeout; no duplicate ZIP was submitted, and its runtime remains unproven. Exact owned resource group, two storage role assignments and two managed-identity principals were verified absent. Deployment code now stops after one unconfirmed submission and preserves the exact ZIP; regression tests cover timeout, generic failure and confirmed-success cleanup. Full collection/report/viewer lifecycle acceptance remains open; see docs/function-runtime-validation.md.",
+        "2026-10-16 source baseline follow-up: CI asserts/logs PowerShell 7.6+, explicitly imports/logs Pester 6.2.0 in the test process, and the validation module now requires PowerShell 7.6. Expanded the existing entry-point test to inspect actual AST version requirements on owned scripts/modules and worker scripts. All 74 offline tests pass on PowerShell 7.6.6/Pester 6.2.0; source parsing and permission evidence hashes/schema pass. This does not change the native trial revision or close the B1, collection/report, permissions or existing-target preservation gates."
       ],
       "blocker": null,
       "claim": {
         "owner": "codex/root",
         "worktree": "C:/azd-reconciliation-20261016/function-runtime-review",
         "baseRevision": "d817c055e9ebc42c7c2ba79053a0188671e29338",
-        "startedAt": "2026-10-16T03:59:34.9073648+00:00"
+        "startedAt": "2026-10-15T20:59:34.9073648-07:00"
       }
     },
     {
