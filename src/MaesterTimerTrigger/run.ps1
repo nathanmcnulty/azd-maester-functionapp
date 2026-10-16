@@ -1,4 +1,5 @@
-﻿# MaesterTimerTrigger/run.ps1
+﻿#Requires -Version 7.6
+# MaesterTimerTrigger/run.ps1
 # Timer-triggered Azure Function that runs Maester assessments.
 # Reads configuration from Function App application settings (environment variables).
 
@@ -407,6 +408,10 @@ $testFileCount = (Get-ChildItem -Path $testsPath -Recurse -Filter '*.Tests.ps1' 
 Write-Step "Found $testFileCount test file(s)"
 
 $pesterConfig = [PesterConfiguration]@{
+  Run = @{
+    # Drift is not enabled by this host; exclude it before input discovery.
+    ExcludePath = @((Join-Path $testsPath 'Maester/Drift/MT1060Drift.tests.ps1'))
+  }
   TestRegistry = @{
     Enabled = $false
   }
@@ -426,11 +431,16 @@ if (-not [string]::IsNullOrWhiteSpace($MailRecipient)) {
 }
 
 Write-Step "Running Invoke-Maester from test path '$testsPath'"
+$previousDriftRoot = [Environment]::GetEnvironmentVariable('MAESTER_FOLDER_DRIFT', 'Process')
 try {
+  [Environment]::SetEnvironmentVariable('MAESTER_FOLDER_DRIFT', $null, 'Process')
   Invoke-Maester @maesterInvokeParameters
 }
 catch {
   throw "Invoke-Maester failed: $($_.Exception.Message)"
+}
+finally {
+  [Environment]::SetEnvironmentVariable('MAESTER_FOLDER_DRIFT', $previousDriftRoot, 'Process')
 }
 Write-Step 'Invoke-Maester execution completed'
 
