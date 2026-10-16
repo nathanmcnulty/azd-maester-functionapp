@@ -178,3 +178,7 @@ This solution is reasonably secure, but there are additional controls you may ch
 - Azure Functions PowerShell guide: https://learn.microsoft.com/azure/azure-functions/functions-reference-powershell
 - Azure Functions module bundling: https://learn.microsoft.com/azure/azure-functions/functions-reference-powershell#dependency-management
 - App Service custom domain: https://learn.microsoft.com/azure/app-service/app-service-web-tutorial-custom-domain
+
+Configuration drift remains disabled: the runner isolates inherited drift input
+from the ordinary assessment. See [drift isolation and remaining gates](docs/drift-isolation.md)
+(MFUNC-009 and MFUNC-010).
