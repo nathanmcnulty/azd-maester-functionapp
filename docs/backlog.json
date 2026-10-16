@@ -47,14 +47,16 @@
       "title": "Qualify Function App execution and optional report-webapp lifecycle",
       "kind": "verification",
       "priority": "P1",
-      "status": "proposed",
+      "status": "in-progress",
       "wave": 2,
       "problem": "Shared pilots are already vendored; host-specific execution and report access still need independently bound evidence.",
       "scope": [
         "scripts/Invoke-FunctionValidation.ps1",
         "docs/",
         "infra/",
-        "tests/TargetContext.Tests.ps1"
+        "tests/TargetContext.Tests.ps1",
+        "scripts/Deploy-FunctionCode.ps1",
+        "tests/PackageFailure.Tests.ps1"
       ],
       "acceptance": [
         "Record exact Maester/runtime/component revisions and host execution output under the selected tenant.",
@@ -73,10 +75,19 @@
       ],
       "sources": [
         "README.md",
-        "scripts/Invoke-FunctionValidation.ps1"
+        "scripts/Invoke-FunctionValidation.ps1",
+        "docs/function-runtime-validation.md"
       ],
-      "evidence": [],
-      "blocker": null
+      "evidence": [
+        "2026-10-16 partial native runtime qualification at d817c055e9ebc42c7c2ba79053a0188671e29338: both FC1/B1 ARM deployments succeeded; FC1 executed PowerShell 7.6.5/.NET 10.0.11, loaded the five locked modules including Maester 2.2.0/Pester 6.2.0 and denied anonymous probe access. Both assessment triggers were disabled. B1 Kudu deployment remained incomplete after CLI timeout; no duplicate ZIP was submitted, and its runtime remains unproven. Exact owned resource group, two storage role assignments and two managed-identity principals were verified absent. Deployment code now stops after one unconfirmed submission and preserves the exact ZIP; regression tests cover timeout, generic failure and confirmed-success cleanup. Full collection/report/viewer lifecycle acceptance remains open; see docs/function-runtime-validation.md."
+      ],
+      "blocker": null,
+      "claim": {
+        "owner": "codex/root",
+        "worktree": "C:/azd-reconciliation-20261016/function-runtime-review",
+        "baseRevision": "d817c055e9ebc42c7c2ba79053a0188671e29338",
+        "startedAt": "2026-10-16T03:59:34.9073648+00:00"
+      }
     },
     {
       "id": "MFUNC-003",

@@ -211,8 +211,8 @@ resource storageManagementPolicy 'Microsoft.Storage/storageAccounts/managementPo
 // ──────────────────────────────────────────────
 // Function App (Linux, PowerShell 7.6)
 // Plan varies by functionAppPlan parameter:
-//   B1 = App Service Basic (Dedicated, unlimited timeout)
-//   FC1 = Flex Consumption (Serverless, 30-min+ timeout, no managed deps)
+//   B1 = App Service Basic (Dedicated, configured 30-minute timeout)
+//   FC1 = Flex Consumption (Serverless, configured 30-minute timeout, no managed deps)
 // ──────────────────────────────────────────────
 
 var isFlexConsumption = functionAppPlan == 'FC1'

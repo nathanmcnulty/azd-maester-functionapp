@@ -82,37 +82,27 @@ $zipSizeKB = [math]::Round((Get-Item $zipPath).Length / 1024, 1)
 Write-Host "Deployment package created: $zipPath ($zipSizeKB KB)"
 
 Write-Host "Deploying function code to '$FunctionAppName'..."
-$maxRetries = 3
-$deployed = $false
-for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
-  Write-Host "Zip deploy attempt $attempt of $maxRetries..."
-  $deployOutput = & az functionapp deployment source config-zip `
-    --subscription $SubscriptionId `
-    --resource-group $ResourceGroupName `
-    --name $FunctionAppName `
-    --src $zipPath `
-    --timeout 300 `
-    --output none `
-    --only-show-errors 2>&1
-  foreach ($line in $deployOutput) {
-    $text = if ($line -is [System.Management.Automation.ErrorRecord]) { $line.Exception.Message } else { "$line" }
-    if ($text -match '^WARNING:\s*(.+)') {
-      Write-Host "Deployment status: $($Matches[1])"
-    } elseif ($text) {
-      Write-Host $text
-    }
-  }
-  if ($LASTEXITCODE -eq 0) {
-    $deployed = $true
-    break
-  }
-  if ($attempt -lt $maxRetries) {
-    Write-Host "Zip deploy attempt $attempt failed (SCM timeout). Retrying in 30 seconds..."
-    Start-Sleep -Seconds 30
+$deployOutput = & az functionapp deployment source config-zip `
+  --subscription $SubscriptionId `
+  --resource-group $ResourceGroupName `
+  --name $FunctionAppName `
+  --src $zipPath `
+  --timeout 300 `
+  --output none `
+  --only-show-errors 2>&1
+$deployExitCode = $LASTEXITCODE
+foreach ($line in $deployOutput) {
+  $text = if ($line -is [System.Management.Automation.ErrorRecord]) { $line.Exception.Message } else { "$line" }
+  if ($text -match '^WARNING:\s*(.+)') {
+    Write-Host "Deployment status: $($Matches[1])"
+  } elseif ($text) {
+    Write-Host $text
   }
 }
-if (-not $deployed) {
-  throw "Function app zip deployment failed for '$FunctionAppName' after $maxRetries attempts."
+if ($deployExitCode -ne 0) {
+  # A CLI timeout can leave an active server deployment. Never upload another
+  # package until that operation's actual result has been established.
+  throw "Function app ZIP deployment did not confirm completion for '$FunctionAppName'. Inspect its existing deployment before submitting another package. Preserved package: $zipPath"
 }
 
 Write-Host "Function code deployed successfully to '$FunctionAppName'."

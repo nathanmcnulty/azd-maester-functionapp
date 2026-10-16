@@ -301,11 +301,14 @@ Review MFUNC-003 against the current repository state. Its status or authorizati
 
 - **Kind:** verification
 - **Priority:** P1
-- **Status:** proposed
+- **Status:** in-progress
 - **Wave:** 2
 - **Authorization:** azure-deployment
 - **Blocker:** _none_
-- **Claim:** _none_
+- **Claim owner:** codex/root
+- **Claim worktree:** C&colon;/azd-reconciliation-20261016/function-runtime-review
+- **Claim base revision:** `d817c055e9ebc42c7c2ba79053a0188671e29338`
+- **Claim started:** 10/15/2026 20&colon;59&colon;34
 
 **Problem:**
 
@@ -317,6 +320,8 @@ Shared pilots are already vendored; host-specific execution and report access st
 - docs/
 - infra/
 - tests/TargetContext.Tests.ps1
+- scripts/Deploy-FunctionCode.ps1
+- tests/PackageFailure.Tests.ps1
 
 **Acceptance:**
 
@@ -342,10 +347,11 @@ Shared pilots are already vendored; host-specific execution and report access st
 
 - README.md
 - scripts/Invoke-FunctionValidation.ps1
+- docs/function-runtime-validation.md
 
 **Evidence:**
 
-- _none_
+- 2026-10-16 partial native runtime qualification at d817c055e9ebc42c7c2ba79053a0188671e29338&colon; both FC1/B1 ARM deployments succeeded; FC1 executed PowerShell 7.6.5/.NET 10.0.11, loaded the five locked modules including Maester 2.2.0/Pester 6.2.0 and denied anonymous probe access. Both assessment triggers were disabled. B1 Kudu deployment remained incomplete after CLI timeout; no duplicate ZIP was submitted, and its runtime remains unproven. Exact owned resource group, two storage role assignments and two managed-identity principals were verified absent. Deployment code now stops after one unconfirmed submission and preserves the exact ZIP; regression tests cover timeout, generic failure and confirmed-success cleanup. Full collection/report/viewer lifecycle acceptance remains open; see docs/function-runtime-validation.md.
 
 **Review and authorization note:**
 
