@@ -30,3 +30,32 @@ an active server deployment, so it does not automatically re-upload the ZIP.
 The error identifies the preserved package. Inspect the existing deployment's
 actual result before submitting another package; a client timeout is not a
 terminal service result. Confirmed success retains normal temporary-file cleanup.
+
+## Fresh B1 isolation attempt
+
+A second disposable B1 trial used clean source
+`c8cfc7957ffee23538289587e82f6c07d334fd6b` with the same ARM template and
+maintained worker files as the first trial. Infrastructure succeeded and readback
+confirmed B1, Linux, `PowerShell|7.6`, always-on, HTTPS, disabled SCM basic
+authentication and both assessment triggers disabled.
+
+Only a 1,740-byte package containing the current host/profile/requirements files
+and a nonce-bound, function-key-protected HTTP probe was uploaded. Its SHA-256 was
+`3A09816CE7D82EA607D974784CF353C6D801FD53550BC9711AC1EF5C0869E7CF`.
+No module package or assessment was submitted. Kudu progressed to a concrete
+`az_cli_functions` deployment in status 1, "Building and Deploying", with
+`complete=false`; its log stopped at "Running deployment command". It remained
+nonterminal at the ten-minute observation limit. The CLI returned nonzero, and
+Kudu listed both a temporary upload record and the concrete deployment record.
+Neither record was treated as successful, and no ZIP was resubmitted.
+
+This narrows the unresolved boundary to B1 deployment/startup handling before
+module loading can be tested. It does not prove runtime incompatibility. B1
+execution remains unproven; another identical fixture should not be the next
+step without a concrete platform/deployment diagnosis.
+
+The fixture was deliberately removed after preserving the pending deployment.
+Fresh readback verified the resource group absent, its exact storage role
+assignment absent (ARM 404), its managed-identity service principal absent
+(Graph 404), and the operator's default subscription unchanged. No credentials
+were written to the evidence files.
