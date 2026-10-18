@@ -433,7 +433,7 @@
       "evidence": [
         {
           "path": "scripts/Setup-PostDeploy.ps1",
-          "sha256": "5920fa4ed76f64df9383fe09135e920dc918e036b3bef1b259c675c4f272be8f"
+          "sha256": "85697a92d3271dba16547752e1a86e1810294c3593cfd687aab5c2b464d6856e"
         },
         {
           "path": "scripts/vendor/Azd.MaesterHooks/Grant-MaesterGraphPermissions.ps1",

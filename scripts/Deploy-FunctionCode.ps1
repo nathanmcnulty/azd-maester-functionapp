@@ -4,6 +4,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$SubscriptionId,
 
+  [Parameter(Mandatory = $false)]
+  [string]$TenantId,
+
   [Parameter(Mandatory = $true)]
   [string]$ResourceGroupName,
 
@@ -27,6 +30,16 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+Import-Module (Join-Path $PSScriptRoot 'vendor/Azd.MaesterHooks/Maester-SetupHelpers.psm1') -Force
+if ([string]::IsNullOrWhiteSpace($TenantId)) { $TenantId = $env:AZURE_TENANT_ID }
+if ([string]::IsNullOrWhiteSpace($TenantId)) {
+  throw 'TenantId is required. Pass -TenantId or set AZURE_TENANT_ID to the expected tenant.'
+}
+# Fail before package preparation or module downloads, independently of the caller.
+$target = Get-AzCliSubscriptionContext -SubscriptionId $SubscriptionId -TenantId $TenantId
+$SubscriptionId = $target.id
+$TenantId = $target.tenantId
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $srcPath = Join-Path -Path $projectRoot -ChildPath 'src'
@@ -183,6 +196,8 @@ function Invoke-BoundedAzDeployment {
 Write-Host "Deploying function code to '$FunctionAppName'..."
 $azCommand = Get-Command az -CommandType Application -ErrorAction Stop | Select-Object -First 1
 $azPath = [IO.Path]::GetFullPath([string]$azCommand.Source)
+# Packaging can take time. Re-read ARM immediately before the ZIP mutation.
+$null = Get-AzCliSubscriptionContext -SubscriptionId $SubscriptionId -TenantId $TenantId
 $deployResult = Invoke-BoundedAzDeployment -AzPath $azPath -Arguments @(
   'functionapp', 'deployment', 'source', 'config-zip',
   '--subscription', $SubscriptionId,

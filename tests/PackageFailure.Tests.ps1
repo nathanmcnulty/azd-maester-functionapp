@@ -17,10 +17,15 @@ function Invoke-WebRequest {
 }
 
 function az {
-  Set-Content -LiteralPath (Join-Path $env:TEMP 'az-called') -Value 'yes'
   $global:LASTEXITCODE = 0
+  if ($args[0] -eq 'rest' -and $args -contains '--subscription') {
+    return '{"id":"/subscriptions/11111111-1111-4111-8111-111111111111","subscriptionId":"11111111-1111-4111-8111-111111111111","tenantId":"22222222-2222-4222-8222-222222222222","displayName":"Offline test","state":"Enabled"}'
+  }
+  Set-Content -LiteralPath (Join-Path $env:TEMP 'az-called') -Value 'yes'
+  throw "Unexpected Azure CLI invocation: $args"
 }
 & '__DEPLOY_SCRIPT__' -SubscriptionId '11111111-1111-4111-8111-111111111111' `
+  -TenantId '22222222-2222-4222-8222-222222222222' `
   -ResourceGroupName 'rg-test' -FunctionAppName 'func-test' -Plan $env:RUNNER_TEST_PLAN
 '@.Replace('__DEPLOY_SCRIPT__', $deployPath.Replace("'", "''"))
     $harnessPath = Join-Path $TestDrive 'package-harness.ps1'
@@ -61,6 +66,10 @@ function az {
 }
 
 Describe 'Unconfirmed Function deployment' {
+  BeforeEach {
+    $env:RUNNER_TEST_RESOURCE_GROUP = $null
+    $env:RUNNER_TEST_TIMEOUT = $null
+  }
   BeforeAll {
     $fixture = Join-Path $TestDrive 'deployment-fixture'
     $scripts = Join-Path $fixture 'scripts'
@@ -68,6 +77,7 @@ Describe 'Unconfirmed Function deployment' {
     $bin = Join-Path $fixture 'bin'
     $null = New-Item -ItemType Directory -Path $scripts, (Join-Path $src 'MaesterTimerTrigger'), $bin
     Copy-Item -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) 'scripts/Deploy-FunctionCode.ps1') -Destination $scripts
+    Copy-Item -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) 'scripts/vendor') -Destination $scripts -Recurse
     '{"version":"2.0","managedDependency":{"enabled":false}}' | Set-Content (Join-Path $src 'host.json')
     '@{}' | Set-Content (Join-Path $src 'requirements.psd1')
     '# Test-only packaging fixture' | Set-Content (Join-Path $src 'profile.ps1')
@@ -76,6 +86,10 @@ Describe 'Unconfirmed Function deployment' {
     $stubScriptPath = Join-Path $bin 'az-stub.ps1'
     $stubScript = @(
       'param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)',
+      'if ($Arguments[0] -eq ''rest'' -and $Arguments -contains ''--subscription'') {',
+      '  [Console]::WriteLine(''{"id":"/subscriptions/11111111-1111-4111-8111-111111111111","subscriptionId":"11111111-1111-4111-8111-111111111111","tenantId":"22222222-2222-4222-8222-222222222222","displayName":"Offline test","state":"Enabled"}'')',
+      '  exit 0',
+      '}',
       '$srcIndex = [Array]::IndexOf($Arguments, ''--src'')',
       'if ($srcIndex -lt 0) { exit 9 }',
       'Add-Content -LiteralPath (Join-Path $env:RUNNER_TEST_TEMP_ROOT ''submissions.txt'') -Value ''submitted''',
@@ -122,8 +136,8 @@ exit /b %ERRORLEVEL%
     }
     $dispatchHarness = @'
 $env:TEMP = $env:RUNNER_TEST_TEMP_ROOT
-$subscription = if ($env:RUNNER_TEST_SUBSCRIPTION) { $env:RUNNER_TEST_SUBSCRIPTION } else { '11111111-1111-4111-8111-111111111111' }
-$invoke = @{ SubscriptionId = $subscription; ResourceGroupName = 'rg-test'; FunctionAppName = 'func-test'; Plan = 'B1' }
+$resourceGroup = if ($env:RUNNER_TEST_RESOURCE_GROUP) { $env:RUNNER_TEST_RESOURCE_GROUP } else { 'rg-test' }
+$invoke = @{ SubscriptionId = '11111111-1111-4111-8111-111111111111'; TenantId = '22222222-2222-4222-8222-222222222222'; ResourceGroupName = $resourceGroup; FunctionAppName = 'func-test'; Plan = 'B1' }
 if ($env:RUNNER_TEST_TIMEOUT) { $invoke.DeploymentTimeoutSeconds = [int]$env:RUNNER_TEST_TIMEOUT }
 try { & '__SCRIPT__' @invoke }
 catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
@@ -132,7 +146,7 @@ catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
     Set-Content -LiteralPath $dispatchHarnessPath -Value $dispatchHarness
   }
   AfterAll {
-    foreach ($name in 'RUNNER_TEST_TEMP_ROOT', 'RUNNER_TEST_DEPLOY_MESSAGE', 'RUNNER_TEST_DEPLOY_EXIT_CODE', 'RUNNER_TEST_DEPLOY_MODE', 'RUNNER_TEST_TIMEOUT', 'RUNNER_TEST_SUBSCRIPTION') {
+    foreach ($name in 'RUNNER_TEST_TEMP_ROOT', 'RUNNER_TEST_DEPLOY_MESSAGE', 'RUNNER_TEST_DEPLOY_EXIT_CODE', 'RUNNER_TEST_DEPLOY_MODE', 'RUNNER_TEST_TIMEOUT', 'RUNNER_TEST_RESOURCE_GROUP') {
       [Environment]::SetEnvironmentVariable($name, $null, 'Process')
     }
   }
@@ -174,13 +188,13 @@ catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
     $env:RUNNER_TEST_DEPLOY_MESSAGE = 'Deployment completed.'
     $env:RUNNER_TEST_DEPLOY_MODE = 'large-output'
     $env:RUNNER_TEST_DEPLOY_EXIT_CODE = '0'
-    $env:RUNNER_TEST_SUBSCRIPTION = "sub'quoted"
+    $env:RUNNER_TEST_RESOURCE_GROUP = "rg'quoted"
     $null = New-Item -ItemType Directory -Path $env:RUNNER_TEST_TEMP_ROOT
     $oldPath = $env:PATH
     $env:PATH = "$bin$([IO.Path]::PathSeparator)$oldPath"
     try { $output = & pwsh -NoProfile -File $dispatchHarnessPath 2>&1 } finally { $env:PATH = $oldPath }
     $LASTEXITCODE | Should -Be 0
-    (Get-Content (Join-Path $env:RUNNER_TEST_TEMP_ROOT 'arguments.json') -Raw | ConvertFrom-Json) | Should -Contain "sub'quoted"
+    (Get-Content (Join-Path $env:RUNNER_TEST_TEMP_ROOT 'arguments.json') -Raw | ConvertFrom-Json) | Should -Contain "rg'quoted"
     $output.Count | Should -BeGreaterThan 1000
     @(Get-ChildItem -LiteralPath $env:RUNNER_TEST_TEMP_ROOT -Filter '*.zip').Count | Should -Be 0
   }
@@ -215,14 +229,14 @@ catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
     }
   }
   It 'rejects <unsafe> before a Windows batch launcher runs' -Skip:(-not $IsWindows) -ForEach @(
-    @{ unsafe = 'shell expansion'; subscription = 'sub&Set-Content sentinel.txt pwned' },
-    @{ unsafe = 'parentheses'; subscription = 'rg(test)' }
+    @{ unsafe = 'shell expansion'; resourceGroup = 'rg&Set-Content sentinel.txt pwned' },
+    @{ unsafe = 'parentheses'; resourceGroup = 'rg(test)' }
   ) {
     $env:RUNNER_TEST_TEMP_ROOT = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
     $env:RUNNER_TEST_DEPLOY_MESSAGE = 'Deployment completed.'
     $env:RUNNER_TEST_DEPLOY_MODE = 'success'
     $env:RUNNER_TEST_DEPLOY_EXIT_CODE = '0'
-    $env:RUNNER_TEST_SUBSCRIPTION = $subscription
+    $env:RUNNER_TEST_RESOURCE_GROUP = $resourceGroup
     $null = New-Item -ItemType Directory -Path $env:RUNNER_TEST_TEMP_ROOT
     $oldPath = $env:PATH
     $env:PATH = "$bin$([IO.Path]::PathSeparator)$oldPath"

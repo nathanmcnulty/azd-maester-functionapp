@@ -22,8 +22,13 @@ if ($FunctionAppName -notmatch '^[a-zA-Z0-9-]+$' -or $StorageAccountName -notmat
   throw 'Validation requires exact FunctionAppName and StorageAccountName from the deployed environment.'
 }
 
+if ([string]::IsNullOrWhiteSpace($TenantId)) { $TenantId = $env:AZURE_TENANT_ID }
+if ([string]::IsNullOrWhiteSpace($TenantId)) {
+  throw 'TenantId is required. Pass -TenantId or set AZURE_TENANT_ID to the expected tenant.'
+}
 $account = Get-AzCliSubscriptionContext -SubscriptionId $SubscriptionId -TenantId $TenantId
-if (-not $TenantId) { $TenantId = $account.tenantId }
+$SubscriptionId = $account.id
+$TenantId = $account.tenantId
 $armToken = & az account get-access-token --subscription $SubscriptionId --resource https://management.azure.com/ --query accessToken -o tsv
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($armToken)) { throw 'Could not acquire ARM token for validation.' }
 $armHeaders = @{ Authorization = "Bearer $armToken" }
@@ -76,6 +81,8 @@ $body = @{ input = $validationId.ToString('D') } | ConvertTo-Json -Compress
 $triggerDeadline = (Get-Date).AddMinutes(10)
 $accepted = $false
 while ((Get-Date) -lt $triggerDeadline) {
+  # A target failure is terminal, including after waits for the worker to start.
+  $null = Get-AzCliSubscriptionContext -SubscriptionId $SubscriptionId -TenantId $TenantId
   try {
     $response = Invoke-WebRequest -Uri $triggerUrl -Method POST -Headers @{
       'x-functions-key' = $masterKey
