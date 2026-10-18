@@ -167,5 +167,26 @@ evidence manifest SHA-256 is
 This qualifies the guarded positive ZIP path and host-reported disabling at the
 recorded revision. Package verification does not establish module imports in
 this trial; the earlier runtime/module qualification remains bound to its
-recorded source. Live Exchange, assessment/report and viewer audience behavior,
-existing-environment migration and the broader MFUNC-002 lifecycle remain open.
+recorded source. Exchange permission setup, assessment/report and viewer audience
+behavior, existing-environment migration and the broader MFUNC-002 lifecycle
+remain open.
+
+## Read-only Exchange connection readiness (2026-10-18)
+
+A separate bounded child exercised the unmodified vendored connection helper at
+the same `dbb5dca703ec378a8aaa66d68aac14459bb718f6` revision. Fresh target checks
+confirmed the approved `sub-mvp` subscription and tenant. A read-only Graph
+organization query matched the expected tenant and supplied its initial
+`.onmicrosoft.com` domain from the verified-domain collection. With installed
+ExchangeOnlineManagement 3.10.1, the actual `Connect-ExchangeOnlineSilent` helper
+acquired its tenant-scoped Outlook token and connected without an interactive
+fallback. `Get-ConnectionInformation` reported exactly one connection with the
+expected tenant, `State=Connected` and `TokenStatus=Active`.
+
+The child disconnected in `finally`, rechecked the unchanged approved context,
+and exited 0 without process or stream timeout at
+`2026-10-18T08:50:19.9297588Z`. Tokens and remote response bodies were not persisted.
+This qualifies selected-tenant token acceptance and connection readiness; it does
+not qualify the permission-granting Setup path, managed-identity Exchange access
+or an Exchange assessment. No resource, permission, service-principal or Exchange
+configuration write was performed by this read-only trial.
