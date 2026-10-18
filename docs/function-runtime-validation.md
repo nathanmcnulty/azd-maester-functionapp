@@ -1,5 +1,12 @@
 # PowerShell 7.6 native runtime validation
 
+Current status (2026-10-18): the latest `sub-mvp` B1 trial at
+`3cd4c621cec3fafdc4a580bbb703f636a127f985` validated production-source package
+startup, imported all five default locked modules and verified both triggers' host-reported
+disabled state. Live collection, report/viewer access and existing-environment
+preservation remain open. Earlier trials below retain their original source and
+subscription provenance.
+
 The 2026-10-16 commercial-lab trial used reviewed source
 `d817c055e9ebc42c7c2ba79053a0188671e29338` and its exact checked-in ARM template.
 Both deployments disabled the optional report web app and resource locks.
@@ -134,10 +141,55 @@ minimal B1 worker execution, not host-level assessment disabling, production
 host/extension loading, locked-module execution or the broader MFUNC-002
 collection/report/viewer lifecycle.
 
-The next stage must determine how to independently verify host trigger disabling
-and worker setting exposure before qualifying the full production source. Do
-not substitute control-plane settings for that proof or weaken the probe to
+At the end of this minimal trial, host trigger disabling still needed independent
+verification before qualifying full production source. Worker setting exposure
+was unresolved; control-plane flags alone were insufficient. Do not weaken the probe to
 accept missing values. No assessment, Graph permission grant or report delivery ran.
 The owned group was removed; fresh checks verified group absence, the exact
 storage role's ARM 404, managed identity's Graph 404 and unchanged CLI default.
 Historical trials retain their original subscription provenance.
+
+## B1 production source, locked modules and host state (2026-10-18)
+
+A separately reviewed trial used fresh owned `sub-mvp` resources and clean source
+`3cd4c621cec3fafdc4a580bbb703f636a127f985`. Every cloud write rechecked the
+approved subscription, tenant, Enabled state, operator and unchanged CLI default.
+The same owned B1/Linux/PowerShell 7.6 app was used for two distinct, independently
+reviewed phases, each with one journaled ZIP submission and one concrete Kudu
+receipt. Both reached status 4 with `complete=true`; no phase resubmitted its ZIP.
+
+The first phase restored the exact production host, including its pinned
+extension bundle, profile, requirements and both trigger bindings, with inert
+assessment bodies. After startup, protected host metadata GETs for exactly
+`MaesterTimerTrigger` and `MaesterValidationTrigger` returned each expected name
+and Boolean `isDisabled=true`; unauthenticated access returned 401. The runtime
+probe also returned 200 with the exact source/nonce/stage and denied anonymous
+access. Qualification succeeded on the third bounded attempt. This directly
+checks host-reported state rather than inferring it from worker environment
+variables. The earlier Tiny trial remains not qualified; why its worker omitted
+the dotted settings remains unproven. The host API contract is represented by
+its [pinned response model](https://github.com/Azure/azure-functions-host/blob/60c277e2c28bc074947602bcfa13ed29e4811bdf/src/WebJobs.Script.WebHost/Models/FunctionMetadataResponse.cs).
+
+Only after that proof and another independent review, the second phase uploaded
+the full production source plus the five default locked modules and a protected
+runtime probe. All seven maintained `src` files were preserved byte-for-byte.
+Five freshly downloaded NUPKGs matched the source lock; their 725 extracted files
+matched the package. The complete 734-file ZIP was 21,402,842 bytes, SHA-256
+`03DBABFE7524C35F2BACAA704BEBF1688833EA154F92F3D7AD730BEEFA9CE564`.
+
+The third bounded probe attempt executed PowerShell 7.6.6 / .NET 10.0.12 on Linux
+x64 and imported exactly Az.Accounts 5.5.3, Microsoft.Graph.Authentication 2.41.0,
+Maester 2.2.0, Pester 6.2.0 and DnsClient-PS 1.2.1. It matched the source/nonce/stage,
+returned protected HTTP 200 and anonymous 401, and again read both exact host
+functions as disabled with unauthenticated metadata access denied. The first two
+attempts did not qualify during startup; successful ZIP deployment alone was
+never used as runtime proof.
+
+These results qualify B1 production-source startup, locked-module loading and
+host-reported disabling at the recorded revision. Validation submitted no
+assessment invocation, queue message, Graph grant or report operation. It does
+not establish a completed Maester collection, delivery/viewer access, all
+historical invocation behavior or an upgrade of an existing environment.
+Afterward, fresh checks verified the owned group absent, exact storage role ARM
+404, managed identity Graph 404 and unchanged CLI default. MFUNC-002 remains open
+for the collection, report/viewer and preservation lifecycle gates.
