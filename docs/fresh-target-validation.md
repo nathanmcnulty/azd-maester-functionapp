@@ -1,6 +1,6 @@
 # Fresh target guards (issue #30)
 
-This source-only candidate depends on Function draft [PR #29](https://github.com/nathanmcnulty/azd-maester-functionapp/pull/29)
+This guard candidate depends on Function draft [PR #29](https://github.com/nathanmcnulty/azd-maester-functionapp/pull/29)
 at frozen revision `7ecbec134446d3057dab902f29c98d873e64289e`. It does not rewrite
 that branch or extend its historical native qualification to new bytes.
 
@@ -66,8 +66,9 @@ They are source/contract evidence, not proof of live Azure behavior. Existing
 source/package/module integrity, resource-ID/tag checks, deployment timeout,
 single-submission and unconfirmed-package preservation contracts remain in place.
 
-No Azure login, deployment, grant, report operation, cleanup, merge or release
-was performed for this change. The private native harness was not run or edited.
+The source-implementation phase performed no Azure login, deployment, grant,
+report operation, cleanup, merge or release, and did not run or edit the private
+native harness. Subsequent native qualification is recorded separately below.
 The prior B1 PowerShell 7.6.6/.NET 10.0.12 full-source/default-module evidence
 remains historical for its recorded source and exact lab scope; see
 [Function runtime validation](function-runtime-validation.md). Broad Function
@@ -120,3 +121,51 @@ schema validation and evidence hashes pass, and the permission manifest's
 semantic content is identical to the frozen base after excluding evidence
 hashes. `ComponentIntegrity.Tests.ps1` retains exact vendor/evidence hash checks
 in ordinary repository CI.
+
+## Subsequent native entrypoint qualification (2026-10-18)
+
+Independent review qualified the guard candidate at immutable Function revision
+`dbb5dca703ec378a8aaa66d68aac14459bb718f6` from
+[PR #31](https://github.com/nathanmcnulty/azd-maester-functionapp/pull/31).
+The negative trial exercised the actual preup and direct ZIP entrypoints against
+the approved `sub-mvp` subscription: missing expected tenant stopped before any
+ARM read; wrong expected tenant stopped each entrypoint after its scoped ARM
+read. No packaging, module download, token command, resource creation or other
+downstream write was reached. The global CLI default remained unchanged.
+
+A separate positive trial used a fresh owned B1 app in Central US. Before each
+operator write, the private harness checked the approved subscription and tenant,
+fresh ARM `Enabled` state, operator, cloud and unchanged default context. The
+unmodified compiled infrastructure, production source and runtime lock came from
+the exact revision above. Readback verified the owned app, B1 plan, system-assigned
+identity, HTTPS settings, disabled basic publishing authentication and the single
+storage-scoped Blob Data Contributor assignment. B1 retained its source-defined
+shared-key storage connection; public blob access was disabled. Both maintained
+triggers were disabled and freshly rechecked before upload.
+
+The unmodified `Deploy-FunctionCode.ps1` ran once with explicit subscription and
+tenant, without a probe or source override. It verified and installed the five
+default locked packages: Az.Accounts 5.5.3, Microsoft.Graph.Authentication 2.41.0,
+Maester 2.2.0, Pester 6.2.0 and DnsClient-PS 1.2.1. Its client exited 0 without
+process or stream timeout. The same server deployment completed at
+`2026-10-18T08:40:02.332926Z`, with status 4, `complete=true`, `active=true` and
+deployer `az_cli_functions`. There was no second upload.
+
+Protected GETs for exactly `MaesterTimerTrigger` and `MaesterValidationTrigger`
+returned HTTP 200, the expected name and Boolean `isDisabled=true`; anonymous
+access to each returned 401. No assessment invocation, queue message, Graph
+permission grant, Exchange setup, notification or report operation ran. The
+deployer removed its owned staging/package files, and all 62 exported source
+files still matched their original hashes. No retained exact-ZIP hash is claimed.
+
+Cleanup completed at `2026-10-18T08:43:42.8325137Z`: the owned resource group was
+absent, the exact storage role returned ARM 404, the managed identity returned
+Graph 404, and the approved CLI context remained unchanged. The terminal private
+evidence manifest SHA-256 is
+`60d96568b49bd507a626a1e2fbf3c9a1788f23ef236a19c00b5a0e74e1bb6a99`.
+
+This qualifies the guarded positive ZIP path and host-reported disabling at the
+recorded revision. Package verification does not establish module imports in
+this trial; the earlier runtime/module qualification remains bound to its
+recorded source. Live Exchange, assessment/report and viewer audience behavior,
+existing-environment migration and the broader MFUNC-002 lifecycle remain open.
