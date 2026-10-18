@@ -59,3 +59,30 @@ Fresh readback verified the resource group absent, its exact storage role
 assignment absent (ARM 404), its managed-identity service principal absent
 (Graph 404), and the operator's default subscription unchanged. No credentials
 were written to the evidence files.
+
+## Deployment boundary diagnosis (2026-10-18)
+
+Read-only inspection of the installed Azure CLI 2.90 implementation and retained
+receipts narrowed the next investigation. The B1 receipt's `az_cli_functions`
+deployer matches the generic `/api/zipdeploy` route. It does not support the
+previous working hypothesis that the Flex `/api/publish` helper handled this
+attempt. CLI selection checks the live app's `properties.sku` for
+`flexconsumption`; Linux hosting alone does not select that helper. A direct
+readback of the old app's SKU was not preserved, so the next attempt must record
+that field instead of inferring the route solely from template configuration.
+
+In the inspected generic implementation, `--timeout 300` limits polling trials;
+ZIP submission and status HTTP requests have no request-level timeout. An
+individual request can therefore outlive that nominal deadline. The retained
+nonterminal receive/build receipts identify an unresolved deployment boundary;
+they do not establish the precise remote cause or a PowerShell incompatibility.
+
+Before another upload, use a new disposable `sub-mvp` target, verify B1 SKU,
+`PowerShell|7.6`, absent/null `functionAppConfig` and disabled assessment triggers,
+and place a process deadline around the single submission. Preserve the ZIP,
+CLI result and exact Kudu receipt/log. A client process deadline still does not
+prove the server operation ended: observe its status or deliberately tear down
+and verify the owned resources before another submission. Do not repeat the
+same unbounded fixture or change hosting plans based on this diagnosis alone.
+No new deployment or source-code fix was performed for this diagnosis; B1 worker
+execution and MFUNC-002 lifecycle acceptance remain open.
