@@ -104,3 +104,40 @@ client behavior only; B1 runtime execution remains unproven.
 The Windows MSI launcher uses its bundled Python executable directly, preserving
 arguments such as resource-group names containing parentheses. Other batch
 launchers reject shell-expansion characters in arguments before invocation.
+
+## MVP B1 minimal runtime evidence (2026-10-18)
+
+A fresh, explicitly selected `sub-mvp` trial used clean source
+`ca8f87c99214eca91b1ccbe423ce8247cca42d56`. Before every cloud write, the private
+harness rechecked the approved subscription and tenant, Enabled state, operator
+and unchanged CLI default. Infrastructure readback confirmed the owned Linux B1
+plan, `PowerShell|7.6`, always-on, HTTPS, disabled SCM basic authentication and
+both maintained assessment-trigger settings set to `true`.
+
+One 1,402-byte HTTP-only ZIP was submitted, SHA-256
+`7B7B7A4E7B69227D7D4425691612EC053506B38B75C8E123E7D4094D1F2CD9B7`.
+It retained the current profile and requirements bytes but omitted the host's
+extension bundle, assessment functions and modules. The client exited zero and
+one concrete Kudu receipt reached status 4 with `complete=true`. Authenticated
+Kudu inventory reads needed more than the initial 20-second limit: a bounded
+60-second diagnostic returned an empty inventory in 23.4 seconds before upload.
+Those initial read failures occurred before upload intent; no package was
+submitted until the baseline read succeeded, and no duplicate ZIP was uploaded.
+
+The protected HTTP probe returned 200 and matched the exact source, nonce and
+stage, PowerShell >=7.6, .NET >=10, Linux x64 and an empty module inventory.
+Anonymous access returned 401. However, both dotted trigger-setting values were
+absent from the worker response despite successful control-plane readback.
+The full probe contract therefore remained **not qualified**. Four bounded
+probe attempts were used; the remaining attempts were abandoned. This proves
+minimal B1 worker execution, not host-level assessment disabling, production
+host/extension loading, locked-module execution or the broader MFUNC-002
+collection/report/viewer lifecycle.
+
+The next stage must determine how to independently verify host trigger disabling
+and worker setting exposure before qualifying the full production source. Do
+not substitute control-plane settings for that proof or weaken the probe to
+accept missing values. No assessment, Graph permission grant or report delivery ran.
+The owned group was removed; fresh checks verified group absence, the exact
+storage role's ARM 404, managed identity's Graph 404 and unchanged CLI default.
+Historical trials retain their original subscription provenance.
