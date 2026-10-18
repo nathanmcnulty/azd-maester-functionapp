@@ -86,3 +86,21 @@ and verify the owned resources before another submission. Do not repeat the
 same unbounded fixture or change hosting plans based on this diagnosis alone.
 No new deployment or source-code fix was performed for this diagnosis; B1 worker
 execution and MFUNC-002 lifecycle acceptance remain open.
+
+## Client deployment deadline
+
+`Deploy-FunctionCode.ps1` adds `-DeploymentTimeoutSeconds` (default 600) around
+one Azure CLI submission. It keeps the CLI's `--timeout 300` and separately
+bounds the local process and output collection time. A deadline failure attempts to
+terminate the local process tree and reports unconfirmed completion; it never
+submits a replacement package. The uniquely named ZIP is preserved on failure
+and removed only after confirmed CLI success.
+
+This local process bound does not cancel or qualify Azure's server-side
+deployment. Inspect the exact Kudu operation, or deliberately tear down and
+verify the owned fixture, before another upload. Subprocess fixtures validate
+client behavior only; B1 runtime execution remains unproven.
+
+The Windows MSI launcher uses its bundled Python executable directly, preserving
+arguments such as resource-group names containing parentheses. Other batch
+launchers reject shell-expansion characters in arguments before invocation.
