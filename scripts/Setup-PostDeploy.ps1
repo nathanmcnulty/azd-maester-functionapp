@@ -64,8 +64,12 @@ if (-not $TenantId -and $env:AZURE_TENANT_ID) {
   $TenantId = $env:AZURE_TENANT_ID
 }
 
+if ([string]::IsNullOrWhiteSpace($TenantId)) {
+  throw 'TenantId is required. Pass -TenantId or set AZURE_TENANT_ID to the expected tenant.'
+}
 $azAccount = Get-AzCliSubscriptionContext -SubscriptionId $SubscriptionId -TenantId $TenantId
-if (-not $TenantId) { $TenantId = $azAccount.tenantId }
+$SubscriptionId = $azAccount.id
+$TenantId = $azAccount.tenantId
 $armToken = az account get-access-token --subscription $SubscriptionId --resource https://management.azure.com/ --query accessToken -o tsv
 $armHeaders = @{ Authorization = "Bearer $armToken" }
 if (-not $EnvironmentName) {
@@ -240,6 +244,9 @@ $azureRoleAssignmentIds = @()
 $exoServicePrincipalDisplayName = $null
 
 if ($IncludeExchange -or $IncludeTeams) {
+  # Target failures must terminate setup even when optional workload failures
+  # are configured to skip. Recheck before any advanced-workload role writes.
+  $null = Get-AzCliSubscriptionContext -SubscriptionId $SubscriptionId -TenantId $TenantId
   try {
     $scopes = @(
       'Application.Read.All',
@@ -264,26 +271,6 @@ if ($IncludeExchange -and $exchangeSetupStatus -eq 'pending') {
   $exchangeAppRoleOk = $false
   $exchangeRbacOk = $false
 
-  try {
-    $exchangeResourceAppId = '00000002-0000-0ff1-ce00-000000000000'
-    $exchangeManageAsAppRoleId = [Guid]'dc50a0fb-09a3-484d-be87-e023b12c6440'
-
-    $newAssignmentId = Grant-ServicePrincipalAppRoleAssignment -PrincipalObjectId $principalId -ResourceAppId $exchangeResourceAppId -AppRoleId $exchangeManageAsAppRoleId
-    if ($newAssignmentId) {
-      $exoAppRoleAssignmentIds += $newAssignmentId
-      Write-Host 'Assigned Exchange.ManageAsApp to the Function App managed identity.'
-    }
-    else {
-      Write-Host 'Exchange.ManageAsApp is already assigned to the Function App managed identity.'
-    }
-    $exchangeAppRoleOk = $true
-  }
-  catch {
-    $action = Resolve-StepFailureAction -StepName 'Exchange app role assignment (Exchange.ManageAsApp)' -Message $_.Exception.Message
-    if ($action -eq 'Stop') {
-      throw
-    }
-  }
 
   try {
     $miSp = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/servicePrincipals/${principalId}?`$select=id,appId,displayName"
@@ -312,7 +299,29 @@ if ($IncludeExchange -and $exchangeSetupStatus -eq 'pending') {
       Write-Verbose "Could not resolve tenant initial domain: $($_.Exception.Message)"
     }
 
-    Connect-ExchangeOnlineSilent -Organization $exoOrganization
+    Connect-ExchangeOnlineSilent -Organization $exoOrganization -TenantId $TenantId
+
+    # Acquire and validate the selected-tenant Exchange token before role changes.
+    try {
+      $exchangeResourceAppId = '00000002-0000-0ff1-ce00-000000000000'
+      $exchangeManageAsAppRoleId = [Guid]'dc50a0fb-09a3-484d-be87-e023b12c6440'
+
+      $newAssignmentId = Grant-ServicePrincipalAppRoleAssignment -PrincipalObjectId $principalId -ResourceAppId $exchangeResourceAppId -AppRoleId $exchangeManageAsAppRoleId
+      if ($newAssignmentId) {
+        $exoAppRoleAssignmentIds += $newAssignmentId
+        Write-Host 'Assigned Exchange.ManageAsApp to the Function App managed identity.'
+      }
+      else {
+        Write-Host 'Exchange.ManageAsApp is already assigned to the Function App managed identity.'
+      }
+      $exchangeAppRoleOk = $true
+    }
+    catch {
+      $action = Resolve-StepFailureAction -StepName 'Exchange app role assignment (Exchange.ManageAsApp)' -Message $_.Exception.Message
+      if ($action -eq 'Stop') {
+        throw
+      }
+    }
 
     try {
       New-ServicePrincipal -AppId $miSp.appId -ObjectId $principalId -DisplayName $miSp.displayName | Out-Null
@@ -428,6 +437,7 @@ if ($exoServicePrincipalDisplayName) {
 
 $deployArgs = @{
   SubscriptionId    = $SubscriptionId
+  TenantId          = $TenantId
   ResourceGroupName = $resolvedResourceGroupName
   FunctionAppName   = $functionAppName
   Plan              = $Plan

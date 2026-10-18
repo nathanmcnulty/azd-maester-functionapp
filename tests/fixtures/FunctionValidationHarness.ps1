@@ -8,7 +8,7 @@ function Get-Date {
   return ([datetime]'2026-10-03T00:00:00Z').AddSeconds(10 * $global:tick)
 }
 function Start-Sleep { param($Seconds) }
-function Get-AzCliSubscriptionContext { return @{ tenantId = '22222222-2222-4222-8222-222222222222' } }
+function Get-AzCliSubscriptionContext { return @{ id = '11111111-1111-4111-8111-111111111111'; tenantId = '22222222-2222-4222-8222-222222222222' } }
 function az {
   $global:LASTEXITCODE = 0
   return 'synthetic-token'
@@ -60,6 +60,7 @@ $PSStyle.OutputRendering = 'PlainText'
 try {
   $result = & (Join-Path $root 'scripts/Invoke-FunctionValidation.ps1') `
     -SubscriptionId '11111111-1111-4111-8111-111111111111' `
+    -TenantId '22222222-2222-4222-8222-222222222222' `
     -ResourceGroupName 'rg-test' -FunctionAppName 'func-test' -StorageAccountName 'sttest' `
     -TimeoutMinutes 1 -PassThru
   $result | ConvertTo-Json -Compress
