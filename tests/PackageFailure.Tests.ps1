@@ -125,7 +125,8 @@ $env:TEMP = $env:RUNNER_TEST_TEMP_ROOT
 $subscription = if ($env:RUNNER_TEST_SUBSCRIPTION) { $env:RUNNER_TEST_SUBSCRIPTION } else { '11111111-1111-4111-8111-111111111111' }
 $invoke = @{ SubscriptionId = $subscription; ResourceGroupName = 'rg-test'; FunctionAppName = 'func-test'; Plan = 'B1' }
 if ($env:RUNNER_TEST_TIMEOUT) { $invoke.DeploymentTimeoutSeconds = [int]$env:RUNNER_TEST_TIMEOUT }
-& '__SCRIPT__' @invoke
+try { & '__SCRIPT__' @invoke }
+catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
 '@.Replace('__SCRIPT__', (Join-Path $scripts 'Deploy-FunctionCode.ps1').Replace("'", "''"))
     $dispatchHarnessPath = Join-Path $TestDrive 'deployment-dispatch.ps1'
     Set-Content -LiteralPath $dispatchHarnessPath -Value $dispatchHarness
