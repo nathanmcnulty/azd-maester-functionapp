@@ -49,7 +49,7 @@ During interactive `azd up`, the preprovision wizard prompts for:
 - Separate default-off Mail.Send and ReportSettings.ReadWrite.All capabilities
 - Optional mail recipient and the previously bootstrapped setup-client ID/account
 
-For non-interactive runs (`azd up --no-prompt`), if `AZURE_RESOURCE_GROUP` is set, `preup` creates it automatically when missing.
+For fresh environments, `preprovision` creates the selected absent dedicated resource group and records its exact creation outcome. Existing groups are never silently adopted for cleanup.
 
 ## Advanced options (optional)
 
@@ -74,7 +74,7 @@ You can optionally enable additional data collection/connectivity for Maester by
 - Apply rebuilds the aggregate delta and requires the exact reviewed plan hash; changed access or targets require a new review.
 - The setup app is bootstrapped and admin-consented separately; it never grants its own consent.
 - Toggling an option from `Yes` to `No` in a later `azd up` run is additive only and does **not** revoke prior assignments.
-- Revocation/best-effort cleanup runs on `azd down` (predown hook).
+- `azd down` checks ownership first and removes only exactly receipted external objects after Azure absence and a fresh cleanup approval.
 
 What this does:
 
@@ -109,20 +109,18 @@ Defaults:
 
 ## Operations
 
-- Remove environment + Azure resources (includes predown cleanup):
-  `azd down -e <env> --force --purge`
-- Optionally remove local azd env:
+- Remove environment + Azure resources (with separate owned-lock and postdown cleanup approvals):
+  `azd down -e <env>`
+- Only after complete cleanup and preserving recovery evidence, optionally remove local azd env:
   `azd env remove <env> --force`
 
 ### Cleanup details
 
-`azd down` runs `scripts/Run-AzdPreDown.ps1`, which performs best-effort cleanup for tenant/scope-level assignments created by advanced options, including:
+`azd down` validates the fresh dedicated resource group's ownership and exact declared inventory. Foreign resources or locks block teardown. Exact owned locks require a separate default-No confirmation; canceling azd afterward leaves those approved locks removed but resources and authorization unchanged.
 
-- Teams directory role assignments (`Teams Reader`) created by this environment
-- Azure RBAC role assignments created by this environment (at selected scopes)
-- Exchange Online permissions/assignments created by this environment (best-effort)
+After Azure deletion, `scripts/Run-AzdPostDown.ps1` proves the bound group/runtime absent, previews the remaining exact external objects, and requires a new default-No confirmation or current plan hash before deletion. Unknown outcomes, foreign dependencies and unsupported restoration of shared changes block cleanup and retain the journal for retry. A generic `--force` does not approve either hook's plan.
 
-The generated setup summary in `outputs/<env>-setup-summary.md` includes tracked assignment IDs used for cleanup.
+Preserve both `.azure/<env>/maester-*-ownership.json` receipts until cleanup is verified. The separately administrator-created setup client and access group remain external prerequisites. Deleting owned accounts removes their stored contents; owned ADO definition deletion also removes associated builds/history/artifacts. See [ownership and recovery limits](docs/owned-setup-cleanup.md) before teardown. Live before/after acceptance is still required.
 
 ## Architecture
 
@@ -149,7 +147,7 @@ The generated setup summary in `outputs/<env>-setup-summary.md` includes tracked
 
 ## Script map
 
-- azd hooks: `scripts/Run-AzdPreUp.ps1`, `scripts/Run-AzdPreProvision.ps1`, `scripts/Run-AzdPostProvision.ps1`, `scripts/Run-AzdPreDown.ps1`
+- azd hooks: `scripts/Run-AzdPreUp.ps1`, `scripts/Run-AzdPreProvision.ps1`, `scripts/Run-AzdPostProvision.ps1`, `scripts/Run-AzdPreDown.ps1`, `scripts/Run-AzdPostDown.ps1`
 - Internal setup/validation: `scripts/Setup-PostDeploy.ps1`, `scripts/Invoke-FunctionValidation.ps1`
 - Function deployment: `scripts/Deploy-FunctionCode.ps1`
 

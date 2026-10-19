@@ -153,14 +153,18 @@ function global:New-ManagementRoleAssignment {
 function global:Import-Module {
   param($Name, [switch]$Force)
   $module = Microsoft.PowerShell.Core\Import-Module -Name $Name -Force:$Force -Global -PassThru
+  if ($global:TargetGuardEntryPoint -eq 'Setup' -and $Name -like '*Maester-InfrastructureOwnership.psm1') {
+    function global:Register-MaesterExternalSetupStarted { }
+  }
   if ($global:TargetGuardEntryPoint -eq 'Setup' -and $Name -like '*Maester-SetupConsent.psm1') {
+    function global:Assert-MaesterConsentPlanApproval { param($Plan,$ApprovedPlanHash); if ($Plan.planHash -ne $ApprovedPlanHash) { throw 'Offline consent mismatch' } }
     function global:Get-MaesterSetupAccessPlan {
       param($TenantId, $SubscriptionId, $PrincipalObjectId, $ResourceId, $StorageAccount, $WebApp, $ArmHeaders, $SecurityGroupObjectId, $SecurityGroupDisplayName, $PermissionProfile, $IncludeMailSend, $IncludeReportSettingsWrite, $IncludeExchange, $IncludeTeams, $IncludeAzure, $AzureScopes)
       Write-TargetGuardEvent 'access-plan' $PSBoundParameters
       [pscustomobject]@{ capability = 'DeploymentSetupAccess'; planHash = ('a' * 64) }
     }
     function global:Invoke-MaesterSetupAccessPlan {
-      param($PlanParameters, $ApprovedPlanHash)
+      param($PlanParameters, $ApprovedPlanHash, $OwnershipSession)
       if ($ApprovedPlanHash -cne ('a' * 64)) { throw 'Fixture approval did not match.' }
       foreach ($kind in @('graph-permissions', 'exchange-app-role', 'exchange-service-principal', 'exchange-rbac')) {
         Write-TargetGuardEvent $kind $PlanParameters
