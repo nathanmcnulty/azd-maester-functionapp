@@ -24,9 +24,15 @@ After `azd init -t nathanmcnulty/azd-maester-functionapp`, run from the template
 
 `azd up`
 
+First bootstrap the dedicated tenant-owned setup client with an authorized administrator,
+then review the exact postprovision access plan before approving it. See
+[setup identity and consent migration](docs/setup-consent-migration.md).
+Direct setup scripts default to plan-only; `azd up` explicitly requests an interactive
+review. Choosing a capability does not approve its permission changes.
+
 ## Versioning and shared components
 
-This template uses the stable Maester module `2.2.0`. Shared azd hooks,
+This template uses the stable Maester module `2.3.0`. Shared azd hooks,
 permission setup, and the optional report web app are vendored from
 `nathanmcnulty/azd-reference` and recorded in `azd-components.lock.json`.
 
@@ -39,7 +45,9 @@ During interactive `azd up`, the preprovision wizard prompts for:
 - Include Web App / Exchange / Teams / Azure
 - Security group object ID (required when Web App is enabled)
 - Azure RBAC scopes (when Azure is enabled)
-- Optional mail recipient
+- Full assessment [Y/n] (Yes/Enter: Full27; No: Minimal8; legacy Extended19 remains explicit)
+- Separate default-off Mail.Send and ReportSettings.ReadWrite.All capabilities
+- Optional mail recipient and the previously bootstrapped setup-client ID/account
 
 For non-interactive runs (`azd up --no-prompt`), if `AZURE_RESOURCE_GROUP` is set, `preup` creates it automatically when missing.
 
@@ -50,7 +58,7 @@ You can optionally enable additional data collection/connectivity for Maester by
 - `IncludeExchange`
   - Bundles the SHA-256 verified `ExchangeOnlineManagement` module in the deployment package.
   - Grants the Function App managed identity the Exchange app permission required for app-only Exchange Online access.
-  - Creates/links an Exchange service principal for the managed identity and assigns the Exchange RBAC role `View-Only Configuration` (best-effort).
+  - Creates/links an Exchange service principal for the managed identity and assigns the Exchange RBAC role `View-Only Configuration` after explicit aggregate-plan approval.
 - `IncludeTeams`
   - Bundles the SHA-256 verified `MicrosoftTeams` module in the deployment package.
   - Assigns the Entra directory role `Teams Reader` to the Function App managed identity.
@@ -62,9 +70,9 @@ You can optionally enable additional data collection/connectivity for Maester by
 
 - Azure RBAC, Entra directory roles, Exchange assignments, and Microsoft Graph app-role assignments are separate authorities.
 - Some environments already have the required Microsoft Graph permissions consented and assigned. If Graph consent has not been completed previously, the deployment may require a **Global Administrator or Privileged Role Administrator**. See the selected profile and permission sections for solution-specific details.
-- If a step fails due to missing privileges, the scripts will:
-  - Prompt you to **Stop** or **Skip** in interactive runs.
-  - Default to **Skip + continue** in non-interactive runs (CI).
+- Unreadable, incomplete or ambiguous access inventory stops setup before writes.
+- Apply rebuilds the aggregate delta and requires the exact reviewed plan hash; changed access or targets require a new review.
+- The setup app is bootstrapped and admin-consented separately; it never grants its own consent.
 - Toggling an option from `Yes` to `No` in a later `azd up` run is additive only and does **not** revoke prior assignments.
 - Revocation/best-effort cleanup runs on `azd down` (predown hook).
 
@@ -83,7 +91,8 @@ For a manual postprovision retry after a successful provision, run
 Setup reads that environment's exact `functionAppName`, `functionAppPrincipalId`, `STORAGE_ACCOUNT_NAME` and optional
 `WEB_APP_NAME` and `WEB_APP_ENABLED` deployment outputs; a false enablement output skips Easy Auth even
 when other Web Apps exist in the resource group. Missing or mismatched targets
-stop setup before role assignments or Easy Auth changes. The postprovision
+stop setup before role assignments or Easy Auth changes. The default invocation
+returns a plan without deploying code; use the documented reviewed apply flow. The postprovision
 summary uses the Function App and optional Web App's exact hosting plan IDs.
 
 Setup, direct ZIP deployment, and direct validation require the expected tenant
@@ -94,7 +103,7 @@ account state is insufficient. ZIP deployment rechecks after packaging. See
 
 Defaults:
 
-- `PERMISSION_PROFILE=Extended`
+- `PERMISSION_PROFILE=Full` for interactive Yes/Enter; No selects Minimal; stored Extended remains legacy
 - `WEB_APP_SKU=F1`
 - resource group pattern: `rg-<environment>-<location>` (override with `AZURE_RESOURCE_GROUP`)
 
@@ -151,13 +160,14 @@ The generated setup summary in `outputs/<env>-setup-summary.md` includes tracked
 - All plans bundle exact modules from `runtime-packages.lock.json`; `scripts/Deploy-FunctionCode.ps1` verifies package SHA-256 before zip deployment. Managed dependencies are disabled. Update the lock only after reviewing and testing the exact new packages.
 - The Azure Functions extension bundle is constrained to the available 4.32.0 release; the Functions host obtains this platform bundle from Microsoft's CDN.
 - Runner script: `src/MaesterTimerTrigger/run.ps1`
+- The 2.3.0 health gate distinguishes policy findings from runtime/permission/engine errors; a nonempty HTML file alone cannot satisfy success. See [release provenance and validation boundaries](docs/maester-230-upgrade.md).
 - On-demand validation invokes `src/MaesterValidationTrigger` with a new request ID and waits for its private `validation/<request ID>.json` completion receipt. A timeout, failed invocation, or missing receipt fails validation; a scheduled run or a fresh `latest.html` cannot satisfy it.
 - Outputs:
   - `archive/maester-report-<timestamp>.html.gz`
   - `latest/latest.html`
 - In WebApp mode, latest report is published to Web App `index.html`
-- Entra auth via app registration is configured automatically. Existing Microsoft Graph consent and app-role assignments are reused; if they are not already present, the first run may require a **Global Administrator or Privileged Role Administrator**.
-- Signed-in deployment user is granted `Storage Blob Data Reader` on the solution storage account
+- Optional Entra auth via app registration is configured only after reviewed-plan approval. Existing Microsoft Graph consent and app-role assignments are reused; if they are not already present, the first run may require a **Global Administrator or Privileged Role Administrator**.
+- The exact selected setup operator receives `Storage Blob Data Reader` only after its missing assignment is reviewed in the aggregate plan
 - Blob soft delete is enabled for 1 day, with blob versioning disabled
 - Archive uploads are gzip compressed and written directly to Cool tier
 - Lifecycle policy moves `archive` blobs to Cold tier after 180 days and deletes after 365 days

@@ -53,6 +53,7 @@ function global:az {
       'stale-enabled' { $metadata.state = 'Disabled' }
       'missing-state' { $metadata.Remove('state') }
       'change-before-exchange' { if ($global:TargetGuardMetadataReads -gt 1) { $metadata.state = 'Disabled' } }
+      'change-before-apply' { if ($global:TargetGuardMetadataReads -gt 2) { $metadata.state = 'Disabled' } }
       'change-before-trigger' { if ($global:TargetGuardMetadataReads -gt 1) { $metadata.state = 'Disabled' } }
       'change-during-packaging' {
         if (Test-Path (Join-Path $env:TARGET_GUARD_WORK_ROOT 'packaged')) { $metadata.state = 'Disabled' }
@@ -152,8 +153,32 @@ function global:New-ManagementRoleAssignment {
 function global:Import-Module {
   param($Name, [switch]$Force)
   $module = Microsoft.PowerShell.Core\Import-Module -Name $Name -Force:$Force -Global -PassThru
+  if ($global:TargetGuardEntryPoint -eq 'Setup' -and $Name -like '*Maester-SetupConsent.psm1') {
+    function global:Get-MaesterSetupAccessPlan {
+      param($TenantId, $SubscriptionId, $PrincipalObjectId, $ResourceId, $StorageAccount, $WebApp, $ArmHeaders, $SecurityGroupObjectId, $SecurityGroupDisplayName, $PermissionProfile, $IncludeMailSend, $IncludeReportSettingsWrite, $IncludeExchange, $IncludeTeams, $IncludeAzure, $AzureScopes)
+      Write-TargetGuardEvent 'access-plan' $PSBoundParameters
+      [pscustomobject]@{ capability = 'DeploymentSetupAccess'; planHash = ('a' * 64) }
+    }
+    function global:Invoke-MaesterSetupAccessPlan {
+      param($PlanParameters, $ApprovedPlanHash)
+      if ($ApprovedPlanHash -cne ('a' * 64)) { throw 'Fixture approval did not match.' }
+      foreach ($kind in @('graph-permissions', 'exchange-app-role', 'exchange-service-principal', 'exchange-rbac')) {
+        Write-TargetGuardEvent $kind $PlanParameters
+      }
+      [pscustomobject]@{ Receipts = @{ EXO_APPROLE_ASSIGNMENT_IDS = @('offline-app-role'); TEAMS_READER_ROLE_ASSIGNMENT_IDS = @(); AZURE_ROLE_ASSIGNMENT_IDS = @() }; EasyAuth = $null; PrincipalDisplayName = 'Offline identity' }
+    }
+  }
   if ($global:TargetGuardEntryPoint -eq 'Setup' -and $Name -like '*Maester-SetupHelpers.psm1') {
-    function global:Invoke-GraphRestRequest { param($Method, $Uri, $TenantId); return $null }
+    function global:Invoke-GraphRestRequest {
+      param($Method, $Uri, $TenantId)
+      if ($Method -eq 'GET' -and $Uri -like '*organization?*') { return @{ value = @(@{ verifiedDomains = @(@{ isInitial = $true; name = 'guard-test.onmicrosoft.com' }) }) } }
+      throw "Unexpected Graph request was blocked: $Method $Uri"
+    }
+    function global:Assert-GraphAccess {
+      param($TenantId, $ClientId, $ExpectedAccount, $Scopes, $AllowInteractive, $AllowContextReplacement)
+      Write-TargetGuardEvent 'graph-connect' @{ tenant = $TenantId; client = $ClientId; account = $ExpectedAccount; scopes = $Scopes }
+    }
+    function global:Get-MaesterSetupScopes { param([switch]$IncludeTeams, [switch]$IncludeWebApp); @('Application.Read.All', 'AppRoleAssignment.ReadWrite.All') }
     function global:Connect-MgGraphSilent {
       param($TenantId, $Scopes)
       Write-TargetGuardEvent 'graph-connect' @{ tenant = $TenantId }
@@ -179,6 +204,13 @@ function global:Import-Module {
     }
   }
 }
+function global:Get-Module {
+  param($Name, [switch]$ListAvailable)
+  if ($Name -eq 'ExchangeOnlineManagement' -and $ListAvailable) { return [pscustomobject]@{ Name = $Name; Version = [version]'3.10.1' } }
+  Microsoft.PowerShell.Core\Get-Module @PSBoundParameters
+}
+$env:MAESTER_SETUP_CLIENT_ID = '66666666-6666-4666-8666-666666666666'
+$env:MAESTER_SETUP_ACCOUNT = 'operator@example.test'
 $invoke = @{
   SubscriptionId = $global:TargetGuardSubscription
   ResourceGroupName = 'rg-test'
@@ -192,6 +224,7 @@ try {
       & (Join-Path $FixtureRoot 'scripts/Deploy-FunctionCode.ps1') @invoke -FunctionAppName 'func-test' -Plan B1 -DeploymentTimeoutSeconds 10
     }
     'Setup' {
+      if ($Scenario -ne 'plan-only') { $invoke.Apply = $true; $invoke.ApprovedPlanHash = 'a' * 64 }
       & (Join-Path $FixtureRoot 'scripts/Setup-PostDeploy.ps1') @invoke -EnvironmentName 'guard-test' -IncludeExchange -Plan B1
     }
     'PreUp' {

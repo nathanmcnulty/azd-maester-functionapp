@@ -20,8 +20,15 @@ param(
   [string]$SecurityGroupDisplayName,
 
   [Parameter(Mandatory = $false)]
-  [ValidateSet('Minimal', 'Extended')]
-  [string]$PermissionProfile = 'Extended'
+  [ValidateSet('Minimal', 'Full', 'Extended')]
+  [string]$PermissionProfile = 'Full',
+  [switch]$Apply,
+  [string]$ApprovedPlanHash,
+  [switch]$InteractiveConsent,
+  [switch]$AllowInteractiveGraphLogin,
+  [switch]$AllowGraphContextReplacement,
+  [switch]$IncludeMailSend,
+  [switch]$IncludeReportSettingsWrite
 )
 
 Set-StrictMode -Version Latest
@@ -99,7 +106,13 @@ if ($SecurityGroupDisplayName) {
   $setupParams['SecurityGroupDisplayName'] = $SecurityGroupDisplayName
 }
 
-& "$PSScriptRoot\Setup-PostDeploy.ps1" @setupParams
+foreach ($name in @('Apply', 'ApprovedPlanHash', 'InteractiveConsent', 'AllowInteractiveGraphLogin', 'AllowGraphContextReplacement', 'IncludeMailSend', 'IncludeReportSettingsWrite')) {
+  if ($PSBoundParameters.ContainsKey($name)) { $setupParams[$name] = $PSBoundParameters[$name] }
+}
+$setupResult = & "$PSScriptRoot\Setup-PostDeploy.ps1" @setupParams
+if ($setupResult -and $setupResult.PSObject.Properties['capability'] -and $setupResult.capability -eq 'DeploymentSetupAccess') {
+  return $setupResult
+}
 
 $easyAuthAppObjectId = 'n/a'
 $easyAuthAppClientIdFromEnv = 'n/a'
@@ -159,52 +172,11 @@ if ($envValues.Count -gt 0) {
 
 Write-Host 'Running postprovision function validation...'
 
-# When Exchange or Teams permissions were just provisioned, poll Graph API
-# to verify the app role assignments are visible before triggering validation.
-# This replaces a static 120-second delay with active polling that proceeds
-# as soon as the permissions are verified.
-$needsReplicationWait = $false
-if ($exchangeSetupStatusFromEnv -ne 'n/a' -and $exchangeSetupStatusFromEnv -eq 'configured') {
-  $needsReplicationWait = $true
-}
-if ($teamsSetupStatusFromEnv -ne 'n/a' -and $teamsSetupStatusFromEnv -eq 'configured') {
-  $needsReplicationWait = $true
-}
-if ($needsReplicationWait) {
-  # Retrieve the managed identity principal ID from azd env
-  $miPrincipalId = Get-EnvValue -Lines $envValues -Name 'FUNCTION_APP_MI_PRINCIPAL_ID'
-  if ($miPrincipalId) {
-    $pollInterval = 15
-    $maxWaitSeconds = 180
-    $elapsed = 0
-    $confirmed = $false
-    Write-Host "Polling Graph API to verify Exchange/Teams permission assignments (up to ${maxWaitSeconds}s)..."
-    while ($elapsed -lt $maxWaitSeconds) {
-      try {
-        $assignments = Invoke-GraphRestRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/servicePrincipals/$miPrincipalId/appRoleAssignments" -TenantId $TenantId
-        $assignedRoles = @($assignments.value | ForEach-Object { $_.appRoleId })
-        # Exchange.ManageAsApp role ID: dc50a0fb-09a3-484d-be87-e023b12c6440
-        $exoReady = ($exchangeSetupStatusFromEnv -ne 'configured') -or ($assignedRoles -contains 'dc50a0fb-09a3-484d-be87-e023b12c6440')
-        # Check for any Teams-related app role assignment
-        $teamsReady = ($teamsSetupStatusFromEnv -ne 'configured') -or ($assignedRoles.Count -gt 0)
-        if ($exoReady -and $teamsReady) {
-          Write-Host "  Permission assignments confirmed in Graph after ${elapsed}s."
-          $confirmed = $true
-          break
-        }
-      } catch {
-        Write-Verbose "  Graph poll attempt failed: $($_.Exception.Message)"
-      }
-      Start-Sleep -Seconds $pollInterval
-      $elapsed += $pollInterval
-      Write-Host "  Waiting for permission replication... (${elapsed}s elapsed)"
-    }
-    if (-not $confirmed) {
-      Write-Warning "Permission verification timed out after ${maxWaitSeconds}s. Proceeding to validation (retry logic in function will handle any remaining delay)."
-    }
-  } else {
-    Write-Warning 'Managed identity principal ID not found in environment. Skipping permission verification polling.'
-  }
+# Setup receipts establish accepted writes, not propagated effective workload access.
+# ZIP deployment may reload setup helpers; do not reconnect Graph or infer Teams
+# readiness from unrelated Graph application-role assignments after deployment.
+if ($exchangeSetupStatusFromEnv -eq 'configured' -or $teamsSetupStatusFromEnv -eq 'configured') {
+  Write-Warning 'Exchange/Teams setup responses were recorded. Permission propagation and effective workload access are unverified; inspect the separately requested native assessment before claiming coverage.'
 }
 
 $validateOnProvision = $env:VALIDATE_FUNCTION_ON_PROVISION
@@ -300,6 +272,7 @@ $summaryLines += "Azure RBAC scopes: $azureScopesFromEnv"
 $summaryLines += "Exchange setup status: $exchangeSetupStatusFromEnv"
 $summaryLines += "Teams setup status: $teamsSetupStatusFromEnv"
 $summaryLines += "Azure setup status: $azureSetupStatusFromEnv"
+$summaryLines += "Workload permission propagation/effective access: unverified by setup responses; inspect native assessment evidence separately."
 $summaryLines += "Exchange appRoleAssignment ids: $exoAppRoleAssignmentIdsFromEnv"
 $summaryLines += "Teams roleAssignment ids: $teamsRoleAssignmentIdsFromEnv"
 $summaryLines += "Azure roleAssignment ids: $azureRoleAssignmentIdsFromEnv"
@@ -364,4 +337,4 @@ if ($webAppResource) {
   Write-Host "Optional custom DNS setup guide: $customDnsDocsUrl"
 }
 
-Write-Host 'azd postprovision completed successfully.'
+Write-Host "azd postprovision setup completed. Function validation status: $validationPassed."

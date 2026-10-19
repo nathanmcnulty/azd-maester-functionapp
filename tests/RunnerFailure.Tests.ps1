@@ -15,7 +15,11 @@ Describe 'Maester runner result boundary' {
     $harness = @'
 $ErrorActionPreference = 'Continue'
 $maesterInvokeParameters = @{}
+Import-Module '__GATE__' -Force
+. '__FIXTURE__'
 $tempRoot = $env:RUNNER_TEST_TEMP_ROOT
+$testsPath = Join-Path $tempRoot 'tests'
+$junitPath = Join-Path $tempRoot 'pester-junit.xml'
 $StorageAccountName = $env:RUNNER_TEST_STORAGE
 $ExportContainer = 'archive'
 $DashboardContainer = 'latest'
@@ -23,7 +27,11 @@ function Write-Step { param([string] $Message) }
 function Invoke-Maester {
   if ($env:RUNNER_TEST_MODE -eq 'throw') { throw 'simulated execution failure' }
   if ($env:RUNNER_TEST_MODE -eq 'result') {
-    Set-Content -LiteralPath (Join-Path $tempRoot 'report.html') -Value '<html>security finding</html>'
+    Set-Content -LiteralPath (Join-Path $tempRoot 'assessment.html') -Value '<html>security finding</html>'
+    Set-Content $junitPath '<testsuites tests="5" errors="0" failures="1" disabled="3" />'
+    $result = New-TestAssessmentResult $testsPath
+    $result | Add-Member OutputFiles ([pscustomobject]@{ OutputHtmlFile = (Join-Path $tempRoot 'assessment.html') })
+    return $result
   }
 }
 function Get-PlainToken { 'test-token' }
@@ -35,7 +43,7 @@ function Set-BlobContent {
     if ($env:RUNNER_TEST_FAIL_UPLOAD -eq '1') { throw 'simulated upload failure' }
   }
 }
-'@ + "`n" + $runBlock + "`nWrite-Output 'RUNNER_SUCCESS'`n"
+'@.Replace('__GATE__', (Join-Path $repoRoot 'src/Maester.AssessmentEvidence.psm1').Replace("'", "''")).Replace('__FIXTURE__', (Join-Path $PSScriptRoot 'fixtures/AssessmentEvidence.ps1').Replace("'", "''")) + "`n" + $runBlock + "`nWrite-Output 'RUNNER_SUCCESS'`n"
     $harnessPath = Join-Path $TestDrive 'runner-harness.ps1'
     Set-Content -LiteralPath $harnessPath -Value $harness
   }
@@ -73,7 +81,7 @@ function Set-BlobContent {
     $output = & pwsh -NoProfile -File $harnessPath 2>&1
     $LASTEXITCODE | Should -Be 0
     @($output) -join "`n" | Should -Match 'RUNNER_SUCCESS'
-    Get-Content -LiteralPath (Join-Path $env:RUNNER_TEST_TEMP_ROOT 'report.html') -Raw | Should -Match 'security finding'
+    Get-Content -LiteralPath (Join-Path $env:RUNNER_TEST_TEMP_ROOT 'assessment.html') -Raw | Should -Match 'security finding'
   }
 
   It 'exits nonzero when publishing the latest report fails' {

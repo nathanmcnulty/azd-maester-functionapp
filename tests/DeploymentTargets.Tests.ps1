@@ -51,7 +51,7 @@ Describe 'Main Function App preflight' {
 
   It 'preflights the function before storage role and environment receipt writes' {
     $setup = Get-Content (Join-Path $PSScriptRoot '../scripts/Setup-PostDeploy.ps1') -Raw
-    $setup.IndexOf('Resolve-MaesterMainDeploymentTarget') | Should -BeLessThan $setup.IndexOf('Storage Blob Data Reader for signed-in user')
+    $setup.IndexOf('Resolve-MaesterMainDeploymentTarget') | Should -BeLessThan $setup.IndexOf('$accessResult = Invoke-MaesterSetupAccessPlan')
     $setup.IndexOf('Resolve-MaesterMainDeploymentTarget') | Should -BeLessThan $setup.IndexOf("Set-MaesterAzdEnvValue -EnvironmentName `$EnvironmentName -Name 'STORAGE_ACCOUNT_NAME'")
   }
 }

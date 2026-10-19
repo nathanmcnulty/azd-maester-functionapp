@@ -5,7 +5,7 @@ BeforeAll {
   $scripts = Join-Path $fixture 'scripts'
   $bin = Join-Path $fixture 'bin'
   $null = New-Item -ItemType Directory -Path $scripts, $bin, (Join-Path $fixture 'src/MaesterTimerTrigger')
-  foreach ($name in @('Deploy-FunctionCode.ps1', 'Setup-PostDeploy.ps1', 'Run-AzdPreUp.ps1', 'Invoke-FunctionValidation.ps1', 'Resolve-DeploymentTargets.ps1', 'FunctionValidation.Core.psm1')) {
+  foreach ($name in @('Deploy-FunctionCode.ps1', 'Setup-PostDeploy.ps1', 'Run-AzdPreUp.ps1', 'Invoke-FunctionValidation.ps1', 'Resolve-DeploymentTargets.ps1', 'FunctionValidation.Core.psm1', 'Maester-SetupConsent.psm1')) {
     Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/$name") -Destination $scripts
   }
   Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/vendor') -Destination $scripts -Recurse
@@ -132,6 +132,19 @@ Describe 'Actual optional Exchange setup caller' {
       [Array]::IndexOf($result.Events.kind, 'exchange-connect') | Should -BeLessThan ([Array]::IndexOf($result.Events.kind, $kind))
     }
   }
+  It 'returns a read-only plan without deployment, writes, or receipts by default' {
+    $result = Invoke-TargetGuardEntrypoint -EntryPoint Setup -Scenario 'plan-only'
+    $result.ExitCode | Should -Be 0 -Because $result.Output
+    Assert-NoCloudMutation $result
+    @($result.Events | Where-Object kind -eq 'access-plan').Count | Should -Be 1
+  }
+  It 'rechecks fresh target state before applying any reviewed grants' {
+    $result = Invoke-TargetGuardEntrypoint -EntryPoint Setup -Scenario 'change-before-apply'
+    $result.ExitCode | Should -Be 1
+    $result.Output | Should -Match 'currently be Enabled'
+    Assert-NoCloudMutation $result
+    @($result.Events | Where-Object kind -eq 'access-plan').Count | Should -Be 1
+  }
   It 'stops failed <Scenario> target validation before any role or deployment change' -ForEach @(
     @{ Scenario = 'wrong-tenant' }, @{ Scenario = 'wrong-subscription' }, @{ Scenario = 'stale-enabled' },
     @{ Scenario = 'missing-state' }, @{ Scenario = 'query-failure' }, @{ Scenario = 'missing-tenant' }
@@ -148,15 +161,12 @@ Describe 'Actual optional Exchange setup caller' {
     @($result.Events | Where-Object kind -eq 'metadata').Count | Should -Be 2
     @($result.Events | Where-Object kind -in @('graph-connect', 'exchange-connect', 'exchange-app-role', 'exchange-service-principal', 'exchange-rbac', 'setup-deploy')).Count | Should -Be 0
   }
-  It 'keeps Exchange role mutations blocked when token validation fails and the optional step is skipped' {
+  It 'fails closed even when the legacy optional-step policy requests skipping failed Exchange token validation' {
     $result = Invoke-TargetGuardEntrypoint -EntryPoint Setup -Scenario 'wrong-exchange-token-skip'
-    $result.ExitCode | Should -Be 0 -Because $result.Output
-    @($result.Events | Where-Object kind -in @('exchange-connect', 'exchange-app-role', 'exchange-service-principal', 'exchange-rbac')).Count | Should -Be 0
-    $failures = @($result.Events | Where-Object kind -eq 'step-failure')
-    $failures.Count | Should -Be 1
-    $failures[0].data.message | Should -Match 'Exchange Online token acquisition failed'
+    $result.ExitCode | Should -Be 1
+    $result.Output | Should -Match 'Exchange Online token acquisition failed'
+    @($result.Events | Where-Object kind -in @('exchange-connect', 'exchange-app-role', 'exchange-service-principal', 'exchange-rbac', 'setup-deploy')).Count | Should -Be 0
     @($result.Events | Where-Object { $_.kind -eq 'token' -and $_.data -contains 'https://outlook.office365.com' }).Count | Should -Be 1
-    @($result.Events | Where-Object kind -eq 'setup-deploy').Count | Should -Be 1
   }
   It 'rejects a token from the wrong tenant before Exchange app-role, service-principal or RBAC changes' {
     $result = Invoke-TargetGuardEntrypoint -EntryPoint Setup -Scenario 'wrong-exchange-token'

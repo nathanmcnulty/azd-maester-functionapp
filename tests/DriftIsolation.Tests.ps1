@@ -55,6 +55,7 @@ Describe 'Drift' { It 'must not run' { $false | Should -BeTrue } }
 param([string]$TestsPath)
 $ErrorActionPreference = 'Stop'
 Import-Module Pester -RequiredVersion 6.2.0 -Force
+$junitPath = Join-Path $TestsPath 'fixture-junit.xml'
 '@ + "`n" + $configuration + @'
 
 $pesterConfig.Run.Path = $TestsPath
