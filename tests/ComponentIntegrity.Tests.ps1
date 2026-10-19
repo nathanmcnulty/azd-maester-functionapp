@@ -6,13 +6,18 @@ BeforeAll {
 }
 
 Describe 'Vendored component and permission evidence integrity' {
-  It 'pins the reviewed target guard pilot to an immutable canonical revision' {
+  It 'pins the reviewed consent flow and retained target guards to an immutable canonical revision' {
     $hooks = @($lock.components | Where-Object id -eq 'maester-azd-hooks')
     $hooks.Count | Should -Be 1
-    $hooks[0].version | Should -BeExactly '1.0.0'
+    $hooks[0].version | Should -BeExactly '2.1.0'
     $hooks[0].sourceRepository | Should -BeExactly 'https://github.com/nathanmcnulty/azd-reference'
-    $hooks[0].sourceRevision | Should -BeExactly 'fd26f7351f36c569067ae37edcb35d6b6cc40f29'
-    $hooks[0].files.Count | Should -Be 8
+    $hooks[0].sourceRevision | Should -BeExactly '552ade2f0267e6872bd681f9a1d8a67ac72d055b'
+    $hooks[0].files.Count | Should -Be 10
+    $coordinator = @($lock.components | Where-Object id -eq 'graph-delegated-authentication')
+    $coordinator.Count | Should -Be 1
+    $coordinator[0].version | Should -BeExactly '1.1.0'
+    $coordinator[0].sourceRevision | Should -BeExactly '552ade2f0267e6872bd681f9a1d8a67ac72d055b'
+    $coordinator[0].files.Count | Should -Be 2
   }
 
   It 'matches every vendored file to its locked SHA-256' {

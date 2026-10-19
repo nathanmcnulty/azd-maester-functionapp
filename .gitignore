@@ -3,3 +3,5 @@ outputs/
 reports/
 test-results/
 *.local.json
+
+/testResults.xml
