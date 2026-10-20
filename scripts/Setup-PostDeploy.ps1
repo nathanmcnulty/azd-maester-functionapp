@@ -247,46 +247,66 @@ if (-not $Apply) {
   return $accessPlan
 }
 Assert-CurrentSetupTargets
-$accessResult = Invoke-MaesterSetupAccessPlan -PlanParameters $accessPlanParameters -ApprovedPlanHash $ApprovedPlanHash
-Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'STORAGE_ACCOUNT_NAME' -Value $storageAccount.name
-Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'FUNCTION_APP_MI_PRINCIPAL_ID' -Value $principalId
-Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'FUNCTION_APP_NAME' -Value $functionAppName
-$exchangeSetupStatus = if ($IncludeExchange) { 'configured' } else { 'disabled' }
-$teamsSetupStatus = if ($IncludeTeams) { 'configured' } else { 'disabled' }
-$azureSetupStatus = if ($IncludeAzure) { 'configured' } else { 'disabled' }
-Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'SETUP_EXCHANGE_STATUS' -Value $exchangeSetupStatus
-Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'SETUP_TEAMS_STATUS' -Value $teamsSetupStatus
-Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'SETUP_AZURE_STATUS' -Value $azureSetupStatus
-foreach ($receiptName in @('EXO_APPROLE_ASSIGNMENT_IDS', 'TEAMS_READER_ROLE_ASSIGNMENT_IDS', 'AZURE_ROLE_ASSIGNMENT_IDS')) {
-  Set-MaesterAzdEnvJsonArray -EnvironmentName $EnvironmentName -Name $receiptName -Values @($accessResult.Receipts[$receiptName])
+Assert-MaesterConsentPlanApproval -Plan $accessPlan -ApprovedPlanHash $ApprovedPlanHash
+Import-Module (Join-Path $PSScriptRoot 'vendor/Azd.MaesterHooks/Maester-InfrastructureOwnership.psm1')
+Register-MaesterExternalSetupStarted -ProjectRoot $projectRoot -EnvironmentName $EnvironmentName -SolutionName 'function-app' -TenantId $TenantId -SubscriptionId $SubscriptionId -ResourceGroupName $resolvedResourceGroupName | Out-Null
+Import-Module (Join-Path $PSScriptRoot 'vendor/Azd.MaesterHooks/Maester-OwnershipJournal.psm1')
+$ownershipBinding = @{
+  environmentName = $EnvironmentName; tenantId = $TenantId.ToLowerInvariant(); subscriptionId = $SubscriptionId.ToLowerInvariant()
+  solutionName = 'function-app'; resourceGroupId = "/subscriptions/$SubscriptionId/resourceGroups/$resolvedResourceGroupName"
+  setupClientId = $env:MAESTER_SETUP_CLIENT_ID.ToLowerInvariant()
+  runtimeResourceId = [string]$functionApp.id; runtimePrincipalId = $principalId.ToLowerInvariant()
 }
-if ($IncludeExchange) {
-  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EXO_SERVICE_PRINCIPAL_DISPLAY_NAME' -Value $accessResult.PrincipalDisplayName
-}
-if ($accessResult.EasyAuth) {
-  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EASY_AUTH_ENTRA_APP_OBJECT_ID' -Value $accessResult.EasyAuth.objectId
-  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EASY_AUTH_ENTRA_APP_CLIENT_ID' -Value $accessResult.EasyAuth.clientId
-  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EASY_AUTH_ENTRA_APP_DISPLAY_NAME' -Value $accessResult.EasyAuth.displayName
-  $SecurityGroupObjectId = $accessResult.EasyAuth.securityGroupId
-}
+$ownershipSession = Open-MaesterOwnershipJournal -ProjectRoot $projectRoot -Binding $ownershipBinding
+try {
+  Assert-CurrentSetupTargets
+  $accessResult = Invoke-MaesterSetupAccessPlan -PlanParameters $accessPlanParameters -ApprovedPlanHash $ApprovedPlanHash -OwnershipSession $ownershipSession
+  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'STORAGE_ACCOUNT_NAME' -Value $storageAccount.name
+  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'FUNCTION_APP_MI_PRINCIPAL_ID' -Value $principalId
+  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'FUNCTION_APP_NAME' -Value $functionAppName
+  $exchangeSetupStatus = if ($IncludeExchange) { 'configured' } else { 'disabled' }
+  $teamsSetupStatus = if ($IncludeTeams) { 'configured' } else { 'disabled' }
+  $azureSetupStatus = if ($IncludeAzure) { 'configured' } else { 'disabled' }
+  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'SETUP_EXCHANGE_STATUS' -Value $exchangeSetupStatus
+  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'SETUP_TEAMS_STATUS' -Value $teamsSetupStatus
+  Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'SETUP_AZURE_STATUS' -Value $azureSetupStatus
+  foreach ($receiptName in @('EXO_APPROLE_ASSIGNMENT_IDS', 'TEAMS_READER_ROLE_ASSIGNMENT_IDS', 'AZURE_ROLE_ASSIGNMENT_IDS')) {
+    $priorReceipt = [string]$deploymentValues[$receiptName]
+    $priorIds = if ($priorReceipt.Trim().StartsWith('[')) { @($priorReceipt | ConvertFrom-Json -ErrorAction Stop) } else { @($priorReceipt -split ';' | Where-Object { $_ }) }
+    # Legacy IDs are retained for operator recovery only; the journal is authoritative.
+    Set-MaesterAzdEnvJsonArray -EnvironmentName $EnvironmentName -Name $receiptName -Values @($priorIds + @($accessResult.Receipts[$receiptName]))
+  }
+  if ($IncludeExchange) {
+    Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EXO_SERVICE_PRINCIPAL_DISPLAY_NAME' -Value $accessResult.PrincipalDisplayName
+  }
+  if ($accessResult.EasyAuth) {
+    Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EASY_AUTH_ENTRA_APP_OBJECT_ID' -Value $accessResult.EasyAuth.objectId
+    Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EASY_AUTH_ENTRA_APP_CLIENT_ID' -Value $accessResult.EasyAuth.clientId
+    Set-MaesterAzdEnvValue -EnvironmentName $EnvironmentName -Name 'EASY_AUTH_ENTRA_APP_DISPLAY_NAME' -Value $accessResult.EasyAuth.displayName
+    $SecurityGroupObjectId = $accessResult.EasyAuth.securityGroupId
+  }
 
-# ──────────────────────────────────────────────
-# Deploy Function App code via zip deploy
-# ──────────────────────────────────────────────
+  # ──────────────────────────────────────────────
+  # Deploy Function App code via zip deploy
+  # ──────────────────────────────────────────────
 
-$deployArgs = @{
-  SubscriptionId    = $SubscriptionId
-  TenantId          = $TenantId
-  ResourceGroupName = $resolvedResourceGroupName
-  FunctionAppName   = $functionAppName
-  Plan              = $Plan
-}
-if ($IncludeExchange) {
-  $deployArgs['IncludeExchange'] = $true
-}
-if ($IncludeTeams) {
-  $deployArgs['IncludeTeams'] = $true
-}
+  $deployArgs = @{
+    SubscriptionId    = $SubscriptionId
+    TenantId          = $TenantId
+    ResourceGroupName = $resolvedResourceGroupName
+    FunctionAppName   = $functionAppName
+    Plan              = $Plan
+  }
+  if ($IncludeExchange) {
+    $deployArgs['IncludeExchange'] = $true
+  }
+  if ($IncludeTeams) {
+    $deployArgs['IncludeTeams'] = $true
+  }
 
-& "$PSScriptRoot\Deploy-FunctionCode.ps1" @deployArgs
+  & "$PSScriptRoot\Deploy-FunctionCode.ps1" @deployArgs
 
+
+} finally {
+  if ($null -ne $ownershipSession) { $ownershipSession.Dispose() }
+}

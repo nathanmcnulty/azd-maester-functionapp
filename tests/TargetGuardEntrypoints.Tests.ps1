@@ -185,11 +185,11 @@ Describe 'Actual preup and validation entrypoints' {
     Assert-NoCloudMutation $result
     @($result.Events | Where-Object kind -eq 'group-exists').Count | Should -Be 0
   }
-  It 'preup uses a matching selected target rather than the different global default' {
+  It 'preup validates the selected target and leaves creation to ownership-aware preprovision' {
     $result = Invoke-TargetGuardEntrypoint -EntryPoint PreUp -Scenario 'valid'
     $result.ExitCode | Should -Be 0 -Because $result.Output
-    ($result.Events.kind -join ',') | Should -Be 'metadata,group-exists,group-create'
-    $groupArgs = @($result.Events | Where-Object kind -eq 'group-create')[0].data
+    ($result.Events.kind -join ',') | Should -Be 'metadata,group-exists'
+    $groupArgs = @($result.Events | Where-Object kind -eq 'group-exists')[0].data
     $groupArgs[[Array]::IndexOf($groupArgs, '--subscription') + 1] | Should -Be '11111111-1111-4111-8111-111111111111'
   }
   It 'direct validation fails closed on <Scenario> before keys, tokens or trigger HTTP' -ForEach @(
