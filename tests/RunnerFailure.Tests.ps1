@@ -24,6 +24,7 @@ $StorageAccountName = $env:RUNNER_TEST_STORAGE
 $ExportContainer = 'archive'
 $DashboardContainer = 'latest'
 function Write-Step { param([string] $Message) }
+function Assert-ValidationStartDeadline { } # This isolated report block is a scheduled invocation.
 function Invoke-Maester {
   if ($env:RUNNER_TEST_MODE -eq 'throw') { throw 'simulated execution failure' }
   if ($env:RUNNER_TEST_MODE -eq 'result') {

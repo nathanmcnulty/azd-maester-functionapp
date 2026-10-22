@@ -5,6 +5,11 @@ BeforeAll {
     $end = $script:runner.IndexOf("Write-Step 'Invoke-Maester execution completed'", $start)
     if ($start -lt 0 -or $end -lt $start) { throw 'Production invocation block was not found.' }
     $script:invokeBlock = [scriptblock]::Create($script:runner.Substring($start, $end - $start))
+    $tokens=$null;$errors=$null
+    $ast=[Management.Automation.Language.Parser]::ParseInput($script:runner,[ref]$tokens,[ref]$errors)
+    $guard=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Assert-ValidationStartDeadline'},$true)
+    . ([scriptblock]::Create($guard.Extent.Text))
+    $script:ValidationContext=$null # These tests exercise the scheduled invocation.
     $script:originalDriftRoot = [Environment]::GetEnvironmentVariable('MAESTER_FOLDER_DRIFT', 'Process')
     $script:originalMarker = [Environment]::GetEnvironmentVariable('DRIFT_TEST_MARKER', 'Process')
     function Write-Step { param([string]$Message) }

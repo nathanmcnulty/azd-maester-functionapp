@@ -193,6 +193,8 @@ if ($validateOnProvision -and $validateOnProvision.Trim().ToLower() -eq 'true') 
   }
 
   $testParams['PassThru'] = $true
+  $testParams['RequestPath'] = $env:FUNCTION_VALIDATION_REQUEST_PATH
+  $testParams['ReceiptPath'] = $env:FUNCTION_VALIDATION_RECEIPT_PATH
 
   # Temporarily relax error handling so validation errors stay non-fatal
   $savedErrorActionPreference = $ErrorActionPreference

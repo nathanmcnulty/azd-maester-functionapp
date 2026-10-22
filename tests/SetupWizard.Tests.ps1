@@ -13,7 +13,11 @@ Describe 'Maester assessment profile selection' {
         INCLUDE_WEB_APP = 'false'; INCLUDE_EXCHANGE = 'false'; INCLUDE_TEAMS = 'false'; INCLUDE_AZURE = 'false'
         MAESTER_SETUP_CLIENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'; MAESTER_SETUP_ACCOUNT = 'admin@example.com'
       } }
-      Mock Read-Host { if ($Prompt -like 'Grant the permissions needed for the full assessment?*') { return $answer }; return 'n' }
+      Mock Read-Host {
+        if ($Prompt -like 'Grant the permissions needed for the full assessment?*') { return $answer }
+        if ($Prompt -like 'Tenant-owned setup application client ID*' -or $Prompt -like 'Setup administrator account UPN*') { return '' }
+        return 'n'
+      }
       Mock Set-AzdEnvValueStrict {}
       Invoke-MaesterUpWizard -SolutionName function-app -SubscriptionId '11111111-1111-4111-8111-111111111111'
       Should -Invoke Read-Host -Times 1 -ParameterFilter { $Prompt -ceq 'Grant the permissions needed for the full assessment? [Y/n]' }
@@ -48,7 +52,10 @@ Describe 'Maester assessment profile selection' {
         PERMISSION_PROFILE = 'Extended'; INCLUDE_WEB_APP = 'false'; INCLUDE_EXCHANGE = 'false'; INCLUDE_TEAMS = 'false'; INCLUDE_AZURE = 'false'
         MAESTER_SETUP_CLIENT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'; MAESTER_SETUP_ACCOUNT = 'admin@example.com'
       } }
-      Mock Read-Host { 'n' }
+      Mock Read-Host {
+        if ($Prompt -like 'Tenant-owned setup application client ID*' -or $Prompt -like 'Setup administrator account UPN*') { return '' }
+        return 'n'
+      }
       Mock Set-AzdEnvValueStrict {}
       Mock Write-Host {}
       Invoke-MaesterUpWizard -SolutionName function-app -SubscriptionId '11111111-1111-4111-8111-111111111111'

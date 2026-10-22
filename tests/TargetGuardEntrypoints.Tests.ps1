@@ -209,15 +209,12 @@ Describe 'Actual preup and validation entrypoints' {
   }
 }
 
-Describe 'Actual validation trigger recheck' {
-  It 'fails terminally if the target is disabled after preparation and before the trigger POST' {
+Describe 'Legacy validation entrypoint safety' {
+  It 'does not retrieve keys or invoke without a reviewed durable request' {
     $result = Invoke-TargetGuardEntrypoint -EntryPoint Validation -Scenario 'change-before-trigger'
     $result.ExitCode | Should -Be 1
-    $result.Output | Should -Match 'currently be Enabled'
-    @($result.Events | Where-Object kind -eq 'metadata').Count | Should -Be 2
-    @($result.Events | Where-Object kind -eq 'receipt-check').Count | Should -Be 1
-    $result.Events[-1].kind | Should -Be 'metadata'
-    @($result.Events | Where-Object kind -eq 'download-or-http-write').Count | Should -Be 0
+    $result.Output | Should -Match 'reviewed RequestPath'
+    @($result.Events | Where-Object kind -in @('metadata','http','token','download-or-http-write')).Count | Should -Be 0
     Assert-NoCloudMutation $result
   }
 }
