@@ -9,6 +9,17 @@ BeforeAll {
     Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/$name") -Destination $scripts
   }
   Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/vendor') -Destination $scripts -Recurse
+  @'
+param([Parameter(Mandatory)][string]$OutputPath,[string]$PackageDirectory,[switch]$IncludeExchange,[switch]$IncludeTeams)
+Write-TargetGuardEvent 'package' @{ IncludeExchange=[bool]$IncludeExchange; IncludeTeams=[bool]$IncludeTeams }
+Set-Content -LiteralPath (Join-Path $env:TARGET_GUARD_WORK_ROOT 'packaged') 'yes'
+[IO.File]::WriteAllBytes($OutputPath,[byte[]](0x50,0x4B,0x03,0x04,0x00,0x00))
+$manifestPath=$OutputPath+'.manifest.json'
+Set-Content -LiteralPath $manifestPath -Value '{}'
+$staging=Join-Path $env:TARGET_GUARD_WORK_ROOT ('package-staging-'+[guid]::NewGuid().ToString('N'))
+$null=New-Item -ItemType Directory -Path $staging
+[pscustomobject]@{ZipPath=$OutputPath;ManifestPath=$manifestPath;StagingRoot=$staging;Sha256=(Get-FileHash -LiteralPath $OutputPath -Algorithm SHA256).Hash;AzureAccessPerformed=$false;DeploymentPerformed=$false}
+'@ | Set-Content -LiteralPath (Join-Path $scripts 'Build-FunctionPackage.ps1')
   # Setup invokes this separate grant script and ZIP script. Capture the real
   # caller splat at that boundary; direct ZIP tests use the unchanged ZIP script.
   $setupFixture = Join-Path $TestDrive 'setup-guard-fixture'
@@ -24,11 +35,6 @@ Write-TargetGuardEvent 'setup-deploy' $PSBoundParameters
   '{"version":"2.0","managedDependency":{"enabled":false}}' | Set-Content (Join-Path $fixture 'src/host.json')
   '@{}' | Set-Content (Join-Path $fixture 'src/requirements.psd1')
   '# Offline packaging fixture' | Set-Content (Join-Path $fixture 'src/profile.ps1')
-  @'
-param($LockPath, $DestinationRoot, $PackageNames)
-Write-TargetGuardEvent 'package' $PackageNames
-Set-Content (Join-Path $env:TARGET_GUARD_WORK_ROOT 'packaged') 'yes'
-'@ | Set-Content (Join-Path $scripts 'Install-LockedModules.ps1')
   $azStub = Join-Path $bin 'az-stub.ps1'
   @'
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)

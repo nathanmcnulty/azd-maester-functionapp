@@ -25,11 +25,28 @@ param(
 
   [Parameter(Mandatory = $false)]
   [ValidateRange(1, 3600)]
-  [int]$DeploymentTimeoutSeconds = 600
+  [int]$DeploymentTimeoutSeconds = 600,
+
+  [string]$PackagePath,
+
+  [ValidatePattern('\A[a-fA-F0-9]{64}\z')]
+  [string]$ExpectedPackageSha256
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($PackagePath) -ne [string]::IsNullOrWhiteSpace($ExpectedPackageSha256)) {
+  throw 'PackagePath and ExpectedPackageSha256 must be supplied together.'
+}
+if ($PackagePath -and ($IncludeExchange -or $IncludeTeams)) {
+  throw 'Optional modules must already be included in the approved prepared package.'
+}
+if ($PackagePath) {
+  $preparedFile = Get-Item -LiteralPath $PackagePath -ErrorAction Stop
+  if ($preparedFile.PSIsContainer -or ($preparedFile.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Prepared package must be an ordinary file.' }
+  if ((Get-FileHash -LiteralPath $preparedFile.FullName -Algorithm SHA256).Hash -ine $ExpectedPackageSha256) { throw 'Prepared package SHA256 mismatch.' }
+}
 
 Import-Module (Join-Path $PSScriptRoot 'vendor/Azd.MaesterHooks/Maester-SetupHelpers.psm1') -Force
 if ([string]::IsNullOrWhiteSpace($TenantId)) { $TenantId = $env:AZURE_TENANT_ID }
@@ -42,59 +59,15 @@ $SubscriptionId = $target.id
 $TenantId = $target.tenantId
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$srcPath = Join-Path -Path $projectRoot -ChildPath 'src'
-$temporaryRoot = (Resolve-Path -LiteralPath $env:TEMP -ErrorAction Stop).ProviderPath
-
-if (-not (Test-Path -Path $srcPath -PathType Container)) {
-  throw "Function app source directory was not found: $srcPath"
+$temporaryPath = if ([string]::IsNullOrWhiteSpace($env:TEMP)) { [IO.Path]::GetTempPath() } else { $env:TEMP }
+$temporaryRoot = (Resolve-Path -LiteralPath $temporaryPath -ErrorAction Stop).ProviderPath
+$generatedPackage = $null
+if ($PackagePath) {
+  $zipPath = $preparedFile.FullName
+} else {
+  $zipPath = Join-Path $temporaryRoot ("function-app-deploy-$([guid]::NewGuid().ToString('N')).zip")
+  $generatedPackage = & (Join-Path $PSScriptRoot 'Build-FunctionPackage.ps1') -OutputPath $zipPath -IncludeExchange:$IncludeExchange -IncludeTeams:$IncludeTeams
 }
-
-$requiredFiles = @('host.json', 'requirements.psd1', 'profile.ps1')
-foreach ($file in $requiredFiles) {
-  $filePath = Join-Path -Path $srcPath -ChildPath $file
-  if (-not (Test-Path -Path $filePath)) {
-    throw "Required function app file is missing: $filePath"
-  }
-}
-
-$triggerPath = Join-Path -Path $srcPath -ChildPath 'MaesterTimerTrigger'
-if (-not (Test-Path -Path $triggerPath -PathType Container)) {
-  throw "Timer trigger function directory was not found: $triggerPath"
-}
-
-# Create a unique staging copy without modifying the source tree.
-$stagingPath = Join-Path -Path $temporaryRoot -ChildPath "func-staging-$([guid]::NewGuid().ToString('N'))"
-Copy-Item -Path $srcPath -Destination $stagingPath -Recurse -Force
-
-$hostJsonPath = Join-Path -Path $stagingPath -ChildPath 'host.json'
-
-# Bundle exact, SHA-256 verified modules for every hosting plan. Managed
-# dependencies and Save-Module can otherwise drift between deployments.
-$hostJson = Get-Content -LiteralPath $hostJsonPath -Raw | ConvertFrom-Json
-$hostJson.managedDependency = [pscustomobject]@{ enabled = $false }
-$hostJson | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $hostJsonPath -Encoding utf8
-Set-Content -LiteralPath (Join-Path $stagingPath 'requirements.psd1') -Value '@{}' -Encoding utf8
-
-$moduleNames = @('Az.Accounts', 'Microsoft.Graph.Authentication', 'Maester', 'Pester', 'DnsClient-PS')
-if ($IncludeExchange) { $moduleNames += @('ExchangeOnlineManagement', 'PackageManagement', 'PowerShellGet') }
-if ($IncludeTeams) { $moduleNames += 'MicrosoftTeams' }
-$modulesPath = Join-Path $stagingPath 'Modules'
-New-Item -ItemType Directory -Path $modulesPath -Force | Out-Null
-& (Join-Path $PSScriptRoot 'Install-LockedModules.ps1') -LockPath (Join-Path $projectRoot 'runtime-packages.lock.json') -DestinationRoot $modulesPath -PackageNames $moduleNames
-if (-not $?) { throw 'Locked module installer did not complete.' }
-
-$zipFileName = "function-app-deploy-$(Get-Date -Format 'yyyyMMddHHmmss')-$([guid]::NewGuid().ToString('N')).zip"
-$zipPath = Join-Path -Path $temporaryRoot -ChildPath $zipFileName
-
-Write-Host "Creating deployment package from staging directory"
-
-if (Test-Path -LiteralPath $zipPath) {
-  throw "Refusing to overwrite an existing deployment package: $zipPath"
-}
-
-# Use .NET compression to create the zip reliably
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($stagingPath, $zipPath)
 
 $zipSizeKB = [math]::Round((Get-Item $zipPath).Length / 1024, 1)
 Write-Host "Deployment package created: $zipPath ($zipSizeKB KB)"
@@ -198,6 +171,9 @@ $azCommand = Get-Command az -CommandType Application -ErrorAction Stop | Select-
 $azPath = [IO.Path]::GetFullPath([string]$azCommand.Source)
 # Packaging can take time. Re-read ARM immediately before the ZIP mutation.
 $null = Get-AzCliSubscriptionContext -SubscriptionId $SubscriptionId -TenantId $TenantId
+if ($PackagePath -and (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash -ine $ExpectedPackageSha256) {
+  throw 'Prepared package changed before deployment.'
+}
 $deployResult = Invoke-BoundedAzDeployment -AzPath $azPath -Arguments @(
   'functionapp', 'deployment', 'source', 'config-zip',
   '--subscription', $SubscriptionId,
@@ -230,19 +206,21 @@ if ($deployExitCode -ne 0) {
 Write-Host "Function code deployed successfully to '$FunctionAppName'."
 
 # Clean up temp artifacts
-try {
+if ($null -ne $generatedPackage) { try {
   $temporaryPrefix = $temporaryRoot.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
   $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
-  foreach ($target in @($zipPath, $stagingPath)) {
+  foreach ($target in @($zipPath, $generatedPackage.ManifestPath, $generatedPackage.StagingRoot)) {
     if (-not [IO.Path]::GetFullPath($target).StartsWith($temporaryPrefix, $comparison)) {
       throw 'Temporary artifact cleanup target is outside the selected temporary directory.'
     }
   }
   Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
-  if (Test-Path -LiteralPath $stagingPath) {
-    Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $generatedPackage.ManifestPath -Force -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $generatedPackage.StagingRoot) {
+    Remove-Item -LiteralPath $generatedPackage.StagingRoot -Recurse -Force -ErrorAction SilentlyContinue
   }
 }
 catch {
   Write-Verbose "Could not remove temporary deployment artifacts."
+}
 }
