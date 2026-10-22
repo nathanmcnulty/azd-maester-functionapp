@@ -153,6 +153,64 @@ The generated setup summary in `outputs/<env>-setup-summary.md` includes tracked
 - Internal setup/validation: `scripts/Setup-PostDeploy.ps1`, `scripts/Invoke-FunctionValidation.ps1`
 - Function deployment: `scripts/Deploy-FunctionCode.ps1`
 
+### Bind a manual validation request
+
+`Invoke-FunctionValidation.ps1` requires an explicit request file and a new durable
+receipt path. The earlier implicit-GUID/admin-key invocation is disabled. The
+controller sends one OAuth message to the existing `maester-validation` queue;
+it neither creates the queue nor grants access. The sender needs **Storage Queue
+Data Message Sender** on that queue, plus the read access required to verify the
+exact site, deployment package and validation evidence. App settings are read
+only in memory to establish the actual host queue account independently from
+report storage. They are never included in controller output or receipts.
+
+Prepare a private schema-2 request containing exactly `schemaVersion`, `context`,
+`binding` and `packagePath`. `packagePath` identifies the reviewed local ZIP.
+`context` contains `schemaVersion` (2), a fresh canonical `validationId`,
+`siteName`, `storageAccountName`, `queueStorageAccountName`, `sourceSha256`,
+`configurationSha256`, `packageSha256`, `activeDeploymentId`, `tenantId`,
+`workloadIdentityId`, `runtimeVersion` (`7.6`) and `deadlineUtc` (UTC round-trip
+timestamp). `sourceSha256` is the hash of the ZIP's generated
+`validation-source.json`, which inventories every packaged file. The external
+build manifest records this hash and the containing ZIP hash without a circular
+dependency. Compute the configuration hash with
+`Get-MaesterValidationConfigurationDigest` using the reviewed effective settings.
+
+`binding` contains exactly `subscriptionId`, `resourceGroupName`,
+`operatorObjectId`, `packageETag`, `selectorETag`, `transport` (`QueueStorage`),
+`queueName` (`maester-validation`) and `queueEncoding` (`base64`). The deployment
+ID and strong ETags must come from a verified capture/deployment receipt for the
+same site and ZIP. The controller verifies the site's Flex deployment storage
+binding, selector and package ETags before submission. Review scheduled/queue
+concurrency, assessment side effects, containment and restart procedures before
+running this command:
+
+```powershell
+./scripts/Invoke-FunctionValidation.ps1 @target `
+  -RequestPath C:/private/validation-request.json `
+  -ReceiptPath C:/private/validation-intent.json -PassThru
+```
+
+The controller flushes a new intent and submission checkpoint before the single
+enqueue attempt. A lost response or HTTP error never causes another enqueue.
+Use the same command with `-ReconcileOnly` to read that request's immutable claim
+and terminal evidence, including when the exact app has stopped. Reconciliation
+does not retrieve invocation keys, enqueue, restart the app or extend the saved
+deadline. Preserve partial files and uncertain request identities.
+
+The Function verifies its complete package inventory, settings, runtime and
+workload identity, then conditionally creates a one-use claim before assessment
+side effects. Duplicate delivery cannot rerun the assessment or overwrite its
+terminal receipt. Queue acceptance, message expiry, a client timeout and an app's
+control-plane `Stopped` state do not establish invocation completion. An absent
+terminal receipt remains `Unresolved`; the controller does not perform app stop
+or claim cancellation. Native containment still requires separate qualification.
+
+For the optional postprovision validation hook, supply both
+`FUNCTION_VALIDATION_REQUEST_PATH` and `FUNCTION_VALIDATION_RECEIPT_PATH` in
+addition to `VALIDATE_FUNCTION_ON_PROVISION=true`. Source and offline test success
+alone do not establish deployed runtime or assessment acceptance.
+
 ### Inspect a package before deployment
 
 Build a ZIP without Azure authentication or deployment:

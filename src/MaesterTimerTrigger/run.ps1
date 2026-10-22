@@ -3,7 +3,7 @@
 # Timer-triggered Azure Function that runs Maester assessments.
 # Reads configuration from Function App application settings (environment variables).
 
-param($Timer, $TriggerMetadata, [string]$ValidationId)
+param($Timer, $TriggerMetadata, [Collections.IDictionary]$ValidationContext)
 
 $ErrorActionPreference = 'Continue'
 $ConfirmPreference = 'None'
@@ -74,24 +74,17 @@ function Set-BlobContent {
 
 function Write-ValidationReceipt {
   param([Parameter(Mandatory)][ValidateSet('Succeeded', 'Failed')][string]$Status)
-  if (-not $ValidationId) { return }
-  if ([string]::IsNullOrWhiteSpace($StorageAccountName)) {
-    throw 'Validation receipt cannot be written without STORAGE_ACCOUNT_NAME.'
+  if (-not $validationClaim) { return }
+  if ($validationTerminalAttempted) { throw 'Terminal evidence was already attempted; preserve its uncertain outcome.' }
+  $script:validationTerminalAttempted = $true
+  $token = Get-PlainToken -ResourceUrl 'https://storage.azure.com/'
+  Complete-MaesterValidationClaim -Claim $validationClaim -Status $Status -StorageAccountName $StorageAccountName -Token $token
+}
+
+function Assert-ValidationStartDeadline {
+  if($ValidationContext -and [DateTimeOffset]::UtcNow -ge [DateTimeOffset]::ParseExact($ValidationContext.deadlineUtc,'o',[Globalization.CultureInfo]::InvariantCulture)){
+    throw 'Validation deadline expired; no new assessment phase may start.'
   }
-  $receiptPath = [IO.Path]::GetTempFileName()
-  try {
-    [pscustomobject]@{
-      schemaVersion = 1
-      validationId = $ValidationId
-      invocationId = $validationInvocationId
-      status = $Status
-      completedAt = (Get-Date).ToUniversalTime().ToString('o')
-    } | ConvertTo-Json -Compress | Set-Content -LiteralPath $receiptPath -Encoding utf8
-    $token = Get-PlainToken -ResourceUrl 'https://storage.azure.com/'
-    Set-BlobContent -AccountName $StorageAccountName -Container 'validation' -BlobName "$ValidationId.json" `
-      -SourcePath $receiptPath -StorageToken $token -ContentType 'application/json' -AccessTier 'Hot'
-  }
-  finally { Remove-Item -LiteralPath $receiptPath -Force -ErrorAction SilentlyContinue }
 }
 
 function Compress-GzipFile {
@@ -160,16 +153,21 @@ function Import-LockedModule {
 Write-Step "Starting Maester function trigger"
 
 $validationInvocationId = $null
-if ($ValidationId) {
-  $requestGuid = [guid]::Empty
+$validationClaim = $null
+$script:validationTerminalAttempted = $false
+if ($ValidationContext) {
+  Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'Maester.ValidationProtocol.psm1') -Force -ErrorAction Stop
+  Assert-MaesterValidationContext $ValidationContext | Out-Null
   $invocationGuid = [guid]::Empty
-  if (-not [guid]::TryParse($ValidationId, [ref]$requestGuid) -or $requestGuid -eq [guid]::Empty -or
-      -not $TriggerMetadata -or $TriggerMetadata.sys.MethodName -ne 'MaesterValidationTrigger' -or
+  if (-not $TriggerMetadata -or $TriggerMetadata.sys.MethodName -ne 'MaesterValidationTrigger' -or
       -not [guid]::TryParse([string]$TriggerMetadata.sys.RandGuid, [ref]$invocationGuid) -or $invocationGuid -eq [guid]::Empty) {
     throw 'Validation invocation metadata is missing or invalid.'
   }
-  $ValidationId = $requestGuid.ToString('D')
-  $validationInvocationId = $invocationGuid.ToString('D')
+  $validationInvocationId = $invocationGuid
+  $validatedSourceDigest=Get-MaesterValidationSourceDigest -Root (Split-Path $PSScriptRoot -Parent)
+  $validatedConfigurationDigest=Get-MaesterValidationConfigurationDigest -Settings ([Environment]::GetEnvironmentVariables('Process'))
+  if((Get-MaesterValidationHostQueueAccount -Settings ([Environment]::GetEnvironmentVariables('Process'))) -cne $ValidationContext.queueStorageAccountName){throw 'Validation queue account differs from the actual host connection.'}
+  if($validatedSourceDigest -cne $ValidationContext.sourceSha256 -or $validatedConfigurationDigest -cne $ValidationContext.configurationSha256 -or $PSVersionTable.PSVersion.ToString(2) -cne $ValidationContext.runtimeVersion){throw 'Validation source, configuration or runtime differs before module execution.'}
 }
 
 if ($Timer.IsPastDue) {
@@ -196,18 +194,7 @@ Write-Step "Config: Exchange=$includeExchange, Teams=$includeTeams, Azure=$inclu
 
 Write-Step 'Importing core modules'
 Import-LockedModule -Name 'Az.Accounts' -Version '5.5.3'
-Import-LockedModule -Name 'Microsoft.Graph.Authentication' -Version '2.41.0'
-Import-LockedModule -Name 'Maester' -Version '2.3.0'
-Import-LockedModule -Name 'Pester' -Version '6.2.0'
-Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'Maester.AssessmentEvidence.psm1') -Force -ErrorAction Stop
-Import-LockedModule -Name 'DnsClient-PS' -Version '1.2.1'
-if ($includeExchange) {
-  Import-LockedModule -Name 'PackageManagement' -Version '1.4.8.1'
-  Import-LockedModule -Name 'PowerShellGet' -Version '2.2.5'
-  Import-LockedModule -Name 'ExchangeOnlineManagement' -Version '3.10.1'
-}
-if ($includeTeams) { Import-LockedModule -Name 'MicrosoftTeams' -Version '8.0.0' }
-Write-Step 'Core modules imported'
+
 
 # Ensure context autosave is disabled (profile.ps1 should do this, but guard against
 # edge cases where the profile check did not fire).
@@ -223,7 +210,41 @@ else {
   Write-Step "Az context already established (Account: $($azCtx.Account.Id))"
 }
 
+# Only identity authentication is allowed before claiming a validation request.
+# Existing, conflicting and uncertain claims never authorize an assessment replay.
+if ($ValidationContext) {
+  $claimToken = Get-PlainToken -ResourceUrl 'https://storage.azure.com/'
+  $parts = $claimToken.Split('.')
+  if ($parts.Count -ne 3) { throw 'Storage token has no verifiable workload identity.' }
+  $payload = $parts[1].Replace('-','+').Replace('_','/')
+  $payload = $payload.PadRight($payload.Length + ((4 - $payload.Length % 4) % 4),'=')
+  $identity = [Text.UTF8Encoding]::new($false,$true).GetString([Convert]::FromBase64String($payload)) | ConvertFrom-Json -AsHashtable -DateKind String
+  if ($identity.tid -isnot [string] -or $identity.oid -isnot [string]) { throw 'Storage token identity claims are missing.' }
+  $settings = [Environment]::GetEnvironmentVariables('Process')
+  $validationClaim = New-MaesterValidationClaim -Context $ValidationContext -InvocationId $validationInvocationId `
+    -SourceDigest $validatedSourceDigest `
+    -ConfigurationDigest $validatedConfigurationDigest `
+    -SiteName $env:WEBSITE_SITE_NAME -StorageAccountName $StorageAccountName `
+    -TenantId $identity.tid -WorkloadIdentityId $identity.oid -Token $claimToken
+  $claimToken = $null
+  Assert-ValidationStartDeadline
+}
+
+Import-LockedModule -Name 'Microsoft.Graph.Authentication' -Version '2.41.0'
+Import-LockedModule -Name 'Maester' -Version '2.3.0'
+Import-LockedModule -Name 'Pester' -Version '6.2.0'
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'Maester.AssessmentEvidence.psm1') -Force -ErrorAction Stop
+Import-LockedModule -Name 'DnsClient-PS' -Version '1.2.1'
+if ($includeExchange) {
+  Import-LockedModule -Name 'PackageManagement' -Version '1.4.8.1'
+  Import-LockedModule -Name 'PowerShellGet' -Version '2.2.5'
+  Import-LockedModule -Name 'ExchangeOnlineManagement' -Version '3.10.1'
+}
+if ($includeTeams) { Import-LockedModule -Name 'MicrosoftTeams' -Version '8.0.0' }
+Write-Step 'Core modules imported'
+
 Write-Step 'Connecting to Microsoft Graph with managed identity'
+Assert-ValidationStartDeadline
 Connect-MgGraph -Identity -NoWelcome -ErrorAction Stop | Out-Null
 Write-Step 'Microsoft Graph connection established'
 
@@ -438,6 +459,7 @@ if (-not [string]::IsNullOrWhiteSpace($MailRecipient)) {
 }
 
 Write-Step "Running Invoke-Maester from test path '$testsPath'"
+Assert-ValidationStartDeadline
 $previousDriftRoot = [Environment]::GetEnvironmentVariable('MAESTER_FOLDER_DRIFT', 'Process')
 try {
   [Environment]::SetEnvironmentVariable('MAESTER_FOLDER_DRIFT', [System.Management.Automation.Language.NullString]::Value, 'Process')
@@ -512,7 +534,7 @@ Write-ValidationReceipt -Status 'Succeeded'
 }
 catch {
   $runError = $_
-  if ($ValidationId) {
+  if ($validationClaim -and -not $validationTerminalAttempted) {
     try { Write-ValidationReceipt -Status 'Failed' }
     catch { Write-Warning "Could not write failed validation receipt: $($_.Exception.Message)" }
   }

@@ -81,6 +81,14 @@ foreach($file in $sourceFiles){
 $files=@(Get-ChildItem -LiteralPath $stagingPath -Recurse -File -Force|Sort-Object FullName|ForEach-Object {
   [ordered]@{path=[IO.Path]::GetRelativePath($stagingPath,$_.FullName).Replace('\','/');bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
 })
+# The internal inventory binds all packaged source and dependencies without a
+# circular dependency on the containing ZIP hash. The external manifest binds both.
+$inventoryPath=Join-Path $stagingPath 'validation-source.json'
+if(Test-Path -LiteralPath $inventoryPath){throw 'Function source reserves validation-source.json for the package builder.'}
+$inventoryJson=[ordered]@{schemaVersion=1;files=$files}|ConvertTo-Json -Depth 5 -Compress
+[IO.File]::WriteAllText($inventoryPath,$inventoryJson,[Text.UTF8Encoding]::new($false))
+$inventorySha=(Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$files+= [ordered]@{path='validation-source.json';bytes=(Get-Item $inventoryPath).Length;sha256=$inventorySha}
 $stream=[IO.File]::Open($zipPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
 try{
   $zip=[IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Create,$true)
@@ -100,7 +108,7 @@ $commit=& $git.Source -C $projectRoot rev-parse HEAD
 if($LASTEXITCODE -ne 0){throw 'Cannot identify package source commit; preserve the ZIP.'}
 $dirty=@(& $git.Source -C $projectRoot status --porcelain --untracked-files=all)
 if($LASTEXITCODE -ne 0){throw 'Cannot identify source working-tree state; preserve the ZIP.'}
-$manifest=[ordered]@{schemaVersion=1;sourceCommit=$commit;sourceTreeClean=($dirty.Count -eq 0);runtimePackageLockSha256=(Get-FileHash $lockPath -Algorithm SHA256).Hash.ToLowerInvariant();componentLockSha256=(Get-FileHash (Join-Path $projectRoot 'azd-components.lock.json') -Algorithm SHA256).Hash.ToLowerInvariant();powershell=$PSVersionTable.PSVersion.ToString();dotnet=[Environment]::Version.ToString();includeExchange=[bool]$IncludeExchange;includeTeams=[bool]$IncludeTeams;packages=$packages;sourceFiles=$sourceFiles;files=$files;zipPath=$zipPath;zipBytes=(Get-Item $zipPath).Length;zipSha256=(Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant();stagingRoot=$buildRoot;azureAccessPerformed=$false;deploymentPerformed=$false}
+$manifest=[ordered]@{schemaVersion=1;validationSourceSha256=$inventorySha;sourceCommit=$commit;sourceTreeClean=($dirty.Count -eq 0);runtimePackageLockSha256=(Get-FileHash $lockPath -Algorithm SHA256).Hash.ToLowerInvariant();componentLockSha256=(Get-FileHash (Join-Path $projectRoot 'azd-components.lock.json') -Algorithm SHA256).Hash.ToLowerInvariant();powershell=$PSVersionTable.PSVersion.ToString();dotnet=[Environment]::Version.ToString();includeExchange=[bool]$IncludeExchange;includeTeams=[bool]$IncludeTeams;packages=$packages;sourceFiles=$sourceFiles;files=$files;zipPath=$zipPath;zipBytes=(Get-Item $zipPath).Length;zipSha256=(Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant();stagingRoot=$buildRoot;azureAccessPerformed=$false;deploymentPerformed=$false}
 $bytes=[Text.Encoding]::UTF8.GetBytes(($manifest|ConvertTo-Json -Depth 10))
 $output=[IO.File]::Open($manifestPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
 try{$output.Write($bytes);$output.Flush($true)}finally{$output.Dispose()}

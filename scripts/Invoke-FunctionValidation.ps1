@@ -6,123 +6,59 @@ param(
   [Parameter(Mandatory)][string]$ResourceGroupName,
   [string]$FunctionAppName,
   [string]$StorageAccountName,
-  [ValidateRange(1, 120)][int]$TimeoutMinutes = 15,
+  [ValidateRange(1,120)][int]$TimeoutMinutes=15,
+  [string]$RequestPath,
+  [string]$ReceiptPath,
+  [switch]$ReconcileOnly,
   [switch]$PassThru
 )
-
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
-
-Import-Module (Join-Path $PSScriptRoot 'vendor/Azd.MaesterHooks/Maester-SetupHelpers.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'FunctionValidation.Core.psm1') -Force
-
-if (-not $FunctionAppName) { $FunctionAppName = $env:FUNCTION_APP_NAME }
-if (-not $StorageAccountName) { $StorageAccountName = $env:STORAGE_ACCOUNT_NAME }
-if ($FunctionAppName -notmatch '^[a-zA-Z0-9-]+$' -or $StorageAccountName -notmatch '^[a-z0-9]+$') {
-  throw 'Validation requires exact FunctionAppName and StorageAccountName from the deployed environment.'
+$ErrorActionPreference='Stop'
+if(-not $RequestPath -or -not $ReceiptPath){throw 'Validation requires a reviewed RequestPath and durable ReceiptPath; automatic GUID submission is disabled.'}
+Add-Type -Path (Join-Path $PSScriptRoot 'FunctionValidation.Transport.cs')
+Import-Module (Join-Path $PSScriptRoot '../src/Maester.ValidationProtocol.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'FunctionValidation.Session.psm1') -Force
+$info=Get-Item -LiteralPath $RequestPath -Force
+if($info.PSIsContainer -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $info.Length -gt 65536){throw 'Invalid validation request file.'}
+$json=[IO.File]::ReadAllText($info.FullName,[Text.UTF8Encoding]::new($false,$true))
+[AzdMaesterValidation.BoundedIO]::ValidateJsonObject($json)
+$request=$json|ConvertFrom-Json -AsHashtable -DateKind String
+Assert-MaesterValidationContext $request.context|Out-Null
+if($request.Count -ne 4 -or ($request.schemaVersion -isnot [int] -and $request.schemaVersion -isnot [long]) -or $request.schemaVersion -ne 2 -or $request.binding -isnot [Collections.IDictionary] -or $request.packagePath -isnot [string]){throw 'Invalid reviewed request shape.'}
+$package=Get-Item -LiteralPath $request.packagePath -Force
+if($package.PSIsContainer -or ($package.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $package.Length -gt 100MB -or (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $request.context.packageSha256){throw 'Reviewed local package identity differs.'}
+$archive=[IO.Compression.ZipFile]::OpenRead($package.FullName)
+try{
+  $entries=@($archive.Entries|Where-Object FullName -CEQ 'validation-source.json')
+  if($entries.Count -ne 1 -or $entries[0].Length -gt 1MB){throw 'Missing or oversized packaged source inventory.'}
+  $stream=$entries[0].Open();$memory=[IO.MemoryStream]::new()
+  try{
+    $buffer=[byte[]]::new(8192)
+    while(($read=$stream.Read($buffer,0,$buffer.Length)) -gt 0){if($memory.Length+$read -gt 1MB){throw 'Packaged inventory exceeds its bound.'};$memory.Write($buffer,0,$read)}
+    $digest=[Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($memory.ToArray()))
+    if($digest -cne $request.context.sourceSha256){throw 'Reviewed package and execution inventory differ.'}
+  }finally{$stream.Dispose();$memory.Dispose()}
+}finally{$archive.Dispose()}
+if(-not $TenantId){$TenantId=$env:AZURE_TENANT_ID}
+if(-not $FunctionAppName){$FunctionAppName=$env:FUNCTION_APP_NAME}
+if(-not $StorageAccountName){$StorageAccountName=$env:STORAGE_ACCOUNT_NAME}
+if($request.binding.subscriptionId -cne $SubscriptionId -or $request.binding.resourceGroupName -cne $ResourceGroupName -or $request.context.tenantId -cne $TenantId -or $request.context.siteName -cne $FunctionAppName -or $request.context.storageAccountName -cne $StorageAccountName){throw 'Reviewed validation request does not match the explicit target.'}
+$deadline=[DateTimeOffset]::ParseExact($request.context.deadlineUtc,'o',[Globalization.CultureInfo]::InvariantCulture)
+$remaining=($deadline-[DateTimeOffset]::UtcNow).TotalSeconds
+if(-not $ReconcileOnly -and ($remaining -le 0 -or $remaining -gt $TimeoutMinutes*60)){throw 'Absolute reviewed deadline must be within the selected overall timeout.'}
+$receipt=[IO.Path]::GetFullPath($ReceiptPath)
+$parent=Get-Item -LiteralPath (Split-Path $receipt -Parent) -Force
+if(-not $parent.PSIsContainer -or ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Receipt parent must be an ordinary existing directory.'}
+$inputJson=[ordered]@{request=$request;receiptPath=$receipt;reconcileOnly=[bool]$ReconcileOnly}|ConvertTo-Json -Depth 12 -Compress
+$bound=[Math]::Min(7500,[Math]::Max(120,[Math]::Ceiling($remaining)+120))
+try{
+  $output=[AzdMaesterValidation.BoundedIO]::Run((Get-Process -Id $PID).Path,(Join-Path $PSScriptRoot 'FunctionValidation.Worker.ps1'),$inputJson,[int]$bound).GetAwaiter().GetResult()
+  [AzdMaesterValidation.BoundedIO]::ValidateJsonObject($output)
+  $result=$output|ConvertFrom-Json -AsHashtable -DateKind String
+}catch{
+  Write-MaesterValidationRecord ($receipt+'.supervisor.'+[guid]::NewGuid().ToString('N')+'.json') ([ordered]@{schemaVersion=2;validationId=$request.context.validationId;workerConclusive=$false;invocationTerminalConfirmed=$false;appStoppedConfirmed=$false;replayPermitted=$false;observedUtc=[DateTimeOffset]::UtcNow.ToString('o')})
+  throw 'Validation worker failed or timed out. Execution is unresolved; preserve the intent and use ReconcileOnly. No cancellation or app-stop is implied.'
 }
-
-if ([string]::IsNullOrWhiteSpace($TenantId)) { $TenantId = $env:AZURE_TENANT_ID }
-if ([string]::IsNullOrWhiteSpace($TenantId)) {
-  throw 'TenantId is required. Pass -TenantId or set AZURE_TENANT_ID to the expected tenant.'
-}
-$account = Get-AzCliSubscriptionContext -SubscriptionId $SubscriptionId -TenantId $TenantId
-$SubscriptionId = $account.id
-$TenantId = $account.tenantId
-$armToken = & az account get-access-token --subscription $SubscriptionId --resource https://management.azure.com/ --query accessToken -o tsv
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($armToken)) { throw 'Could not acquire ARM token for validation.' }
-$armHeaders = @{ Authorization = "Bearer $armToken" }
-
-# Exact target GETs prevent a stale environment setting from silently choosing a
-# different resource in a group with multiple apps or storage accounts.
-$sitePath = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/${FunctionAppName}?api-version=2023-12-01"
-$site = Invoke-RestMethod -Method GET -Uri "https://management.azure.com$sitePath" -Headers $armHeaders -ErrorAction Stop
-if ($site.name -ne $FunctionAppName -or $site.kind -notlike '*functionapp*') {
-  throw "The selected resource '$FunctionAppName' is not the expected Function App."
-}
-$storagePath = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Storage/storageAccounts/$StorageAccountName" + '?api-version=2023-05-01'
-$storage = Invoke-RestMethod -Method GET -Uri "https://management.azure.com$storagePath" -Headers $armHeaders -ErrorAction Stop
-if ($storage.name -ne $StorageAccountName) { throw "The selected storage account '$StorageAccountName' was not found." }
-
-$keysPath = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$FunctionAppName/host/default/listkeys?api-version=2023-12-01"
-$keys = Invoke-RestMethod -Method POST -Uri "https://management.azure.com$keysPath" -Headers $armHeaders -Body '{}' -ContentType 'application/json' -ErrorAction Stop
-$masterKey = $keys.masterKey
-if ([string]::IsNullOrWhiteSpace($masterKey)) { throw 'Function App master key was not returned.' }
-
-$storageToken = & az account get-access-token --subscription $SubscriptionId --resource https://storage.azure.com/ --query accessToken -o tsv
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($storageToken)) { throw 'Could not acquire storage token for validation.' }
-$blobHeaders = @{ Authorization = "Bearer $storageToken"; 'x-ms-version' = '2021-12-02' }
-
-function Get-HttpStatusCode {
-  param($ErrorRecord)
-  $exception = $ErrorRecord.Exception
-  while ($exception) {
-    if ($exception.PSObject.Properties['Response'] -and $exception.Response -and
-        $exception.Response.PSObject.Properties['StatusCode']) {
-      return [int]$exception.Response.StatusCode
-    }
-    $exception = $exception.InnerException
-  }
-  return $null
-}
-
-$validationId = [guid]::NewGuid()
-$receiptUrl = "https://$StorageAccountName.blob.core.windows.net/validation/$($validationId.ToString('D')).json"
-try {
-  Invoke-WebRequest -Method HEAD -Uri $receiptUrl -Headers $blobHeaders -UseBasicParsing -ErrorAction Stop | Out-Null
-  throw 'The newly generated validation receipt already exists; refusing to reuse it.'
-}
-catch {
-  if ((Get-HttpStatusCode $_) -ne 404) { throw }
-}
-
-$triggerUrl = "https://$FunctionAppName.azurewebsites.net/admin/functions/MaesterValidationTrigger"
-$body = @{ input = $validationId.ToString('D') } | ConvertTo-Json -Compress
-$triggerDeadline = (Get-Date).AddMinutes(10)
-$accepted = $false
-while ((Get-Date) -lt $triggerDeadline) {
-  # A target failure is terminal, including after waits for the worker to start.
-  $null = Get-AzCliSubscriptionContext -SubscriptionId $SubscriptionId -TenantId $TenantId
-  try {
-    $response = Invoke-WebRequest -Uri $triggerUrl -Method POST -Headers @{
-      'x-functions-key' = $masterKey
-      'Content-Type' = 'application/json'
-    } -Body $body -UseBasicParsing -ErrorAction Stop
-    if ([int]$response.StatusCode -ne 202) { throw "Validation trigger returned unexpected HTTP $($response.StatusCode)." }
-    $accepted = $true
-    break
-  }
-  catch {
-    $code = Get-HttpStatusCode $_
-    if ($code -notin @(404, 500, 502, 503, 504)) { throw }
-    Start-Sleep -Seconds 20
-  }
-}
-if (-not $accepted) { throw 'Validation trigger did not become available within ten minutes.' }
-
-$deadline = (Get-Date).AddMinutes($TimeoutMinutes)
-while ((Get-Date) -lt $deadline) {
-  try {
-    $receipt = Invoke-RestMethod -Method GET -Uri $receiptUrl -Headers $blobHeaders -ErrorAction Stop
-    Assert-MaesterValidationReceipt -Receipt $receipt -ValidationId $validationId | Out-Null
-    $result = [pscustomobject]@{
-      ValidationPassed = $true
-      ExecutionComplete = $true
-      FunctionAppName = $FunctionAppName
-      FinalStatus = 'Succeeded'
-      ValidationId = $validationId.ToString('D')
-      InvocationId = $receipt.invocationId
-      SubscriptionId = $SubscriptionId
-      ResourceGroupName = $ResourceGroupName
-      CompletedAt = (Get-Date).ToUniversalTime().ToString('o')
-    }
-    Write-Host "Function validation completed for request '$validationId'."
-    if ($PassThru) { return $result }
-    return
-  }
-  catch {
-    if ((Get-HttpStatusCode $_) -ne 404) { throw }
-  }
-  Start-Sleep -Seconds 15
-}
-throw "Function validation request '$validationId' has no completed receipt after $TimeoutMinutes minutes."
+if($PassThru){return [pscustomobject]$result}
+if(-not $result.ValidationPassed){throw 'Validation did not pass. Inspect the durable outcome; unresolved execution requires the separately approved containment procedure.'}
+Write-Host "Validation request '$($request.context.validationId)' completed within its reviewed deadline."

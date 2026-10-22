@@ -26,6 +26,11 @@ $invokeEnd = $runner.IndexOf("Write-Step 'Invoke-Maester execution completed'", 
 if ($configStart -lt 0 -or $configEnd -le $configStart -or $invokeStart -lt 0 -or $invokeEnd -le $invokeStart) { throw 'Production invocation blocks not found.' }
 $configBlock = [scriptblock]::Create($runner.Substring($configStart, $configEnd - $configStart))
 $invokeBlock = [scriptblock]::Create($runner.Substring($invokeStart, $invokeEnd - $invokeStart))
+$tokens=$null;$errors=$null
+$runnerAst=[Management.Automation.Language.Parser]::ParseInput($runner,[ref]$tokens,[ref]$errors)
+$deadlineGuard=$runnerAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Assert-ValidationStartDeadline'},$true)
+. ([scriptblock]::Create($deadlineGuard.Extent.Text))
+$ValidationContext=$null # The offline compatibility modes exercise scheduled runs.
 # Real Graph package is imported but has no session. Block every network/auth
 # entrypoint even if upstream behavior changes. No fabricated Graph context.
 $global:Maester230TransportAttempts = 0
