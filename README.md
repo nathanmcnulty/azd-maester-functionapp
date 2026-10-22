@@ -153,6 +153,38 @@ The generated setup summary in `outputs/<env>-setup-summary.md` includes tracked
 - Internal setup/validation: `scripts/Setup-PostDeploy.ps1`, `scripts/Invoke-FunctionValidation.ps1`
 - Function deployment: `scripts/Deploy-FunctionCode.ps1`
 
+### Inspect a package before deployment
+
+Build a ZIP without Azure authentication or deployment:
+
+```powershell
+./scripts/Build-FunctionPackage.ps1 -OutputPath C:/packages/maester.zip
+```
+
+The output directory must already exist. The builder refuses to overwrite the
+ZIP or its adjacent `.manifest.json`. It verifies the selected module archives
+against `runtime-packages.lock.json`, disables managed dependencies in the staged
+content, and records source and component hashes, package pins, every ZIP file
+hash, and the final ZIP hash. Entries use fixed timestamps and sorted paths;
+repeat builds use the same PowerShell/.NET versions for byte comparison.
+Use `-PackageDirectory` for previously downloaded locked archives, or let the
+builder download them from PowerShell Gallery. Optional Exchange and Teams
+modules must be selected when building.
+
+After reviewing the artifact and approving the Azure change, deploy those exact
+bytes with the expected tenant and subscription:
+
+```powershell
+./scripts/Deploy-FunctionCode.ps1 -TenantId $tenant -SubscriptionId $subscription `
+  -ResourceGroupName $group -FunctionAppName $function `
+  -PackagePath C:/packages/maester.zip -ExpectedPackageSha256 $reviewedSha256
+```
+
+Prepared packages remain available after success or an uncertain result. A
+deployment timeout requires reconciling the existing remote deployment before
+another submission. Packaging does not change the Function host runtime,
+permissions, schedule, or validate an assessment.
+
 ## Runtime behavior
 
 - Weekly schedule (Sunday midnight UTC). To run at a different time or frequency, edit the `schedule` value in `src/MaesterTimerTrigger/function.json` (e.g. `"0 30 6 * * 1"` for Monday 6:30 UTC), then re-deploy the function code.
