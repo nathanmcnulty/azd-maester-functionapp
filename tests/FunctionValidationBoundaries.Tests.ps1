@@ -2,9 +2,28 @@ BeforeAll {
   $root=Split-Path $PSScriptRoot -Parent
   if(-not ('AzdMaesterValidation.BoundedIO' -as [type])){Add-Type -Path (Join-Path $root 'scripts/FunctionValidation.Transport.cs')}
   $pwsh=(Get-Process -Id $PID).Path
+  function Get-BoundaryProcessState([int]$ChildProcessId) {
+    $process=Get-Process -Id $ChildProcessId -ErrorAction SilentlyContinue
+    if($null -eq $process){return @{Terminated=$true;State='Absent'}}
+    try{if($process.HasExited){return @{Terminated=$true;State='Exited'}}}finally{$process.Dispose()}
+    if($IsLinux){
+      # A killed orphan may remain listed until its reaper runs. Only kernel Z
+      # is terminal here: sleeping, stopped and uninterruptible states still fail.
+      $statusPath="/proc/$ChildProcessId/status"
+      try{
+        $line=[IO.File]::ReadLines($statusPath)|Where-Object{$_ -cmatch '^State:'}|Select-Object -First 1
+        if($line -cmatch '^State:\s+([A-Za-z])'){return @{Terminated=($Matches[1] -ceq 'Z');State=$Matches[1]}}
+      }catch [IO.FileNotFoundException]{return @{Terminated=$true;State='Absent'}}
+      catch [IO.DirectoryNotFoundException]{return @{Terminated=$true;State='Absent'}}
+    }
+    @{Terminated=$false;State='RunningOrUnobserved'}
+  }
 }
 
 Describe 'Bounded validation subprocess transport' {
+  It 'does not classify the live supervising process as terminated' {
+    (Get-BoundaryProcessState $PID).Terminated|Should -BeFalse
+  }
   It 'accepts bounded output and rejects a nonzero worker without exposing its error' {
     $ok=Join-Path $TestDrive 'ok.ps1'
     Set-Content $ok '[Console]::Out.Write("bounded")'
@@ -50,7 +69,15 @@ Start-Sleep -Seconds 20
     Set-Content $worker $source
     {[AzdMaesterValidation.BoundedIO]::Run($pwsh,$worker,'{}',3).GetAwaiter().GetResult()}|Should -Throw '*failed or timed out*'
     Test-Path $pidPath|Should -BeTrue
-    Get-Process -Id ([int](Get-Content $pidPath)) -ErrorAction SilentlyContinue|Should -BeNullOrEmpty
+    $descendantId=[int](Get-Content $pidPath)
+    $reconcile=[Diagnostics.Stopwatch]::StartNew()
+    do{
+      $state=Get-BoundaryProcessState $descendantId
+      if($state.Terminated){break}
+      Start-Sleep -Milliseconds 25
+    }while($reconcile.Elapsed.TotalSeconds -lt 2)
+    Write-Host ('Descendant termination observed: '+($state|ConvertTo-Json -Compress))
+    $state.Terminated|Should -BeTrue -Because ('a descendant must terminate within the bounded observation; observed '+$state.State)
   }
 }
 
