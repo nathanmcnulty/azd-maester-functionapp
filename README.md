@@ -95,6 +95,12 @@ stop setup before role assignments or Easy Auth changes. The default invocation
 returns a plan without deploying code; use the documented reviewed apply flow. The postprovision
 summary uses the Function App and optional Web App's exact hosting plan IDs.
 
+The target resolver recognizes the original `function-app` solution tag and the
+portfolio's `azd-maester-functionapp` identifier for this Function solution.
+Workload, environment, management tags, exact resource scope and managed identity
+must still match. This keeps retained environments usable without changing their
+existing ownership tags.
+
 Setup, direct ZIP deployment, and direct validation require the expected tenant
 via `-TenantId` or `AZURE_TENANT_ID`. They check fresh ARM subscription metadata
 for the exact selected subscription, tenant, and `Enabled` state; cached CLI
