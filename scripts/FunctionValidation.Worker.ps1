@@ -10,7 +10,7 @@ try {
   $context=$request.context
   $binding=$request.binding
   Import-Module (Join-Path $PSScriptRoot 'FunctionValidation.Session.psm1') -Force
-  Import-Module (Join-Path $PSScriptRoot '../src/Maester.ValidationProtocol.psm1') -Force
+  Import-Module (Join-Path $PSScriptRoot '../src/Maester.ValidationProtocol.psm1')
   Assert-MaesterValidationContext $context|Out-Null
   if($binding.Count -ne 8 -or $binding.transport -cne 'QueueStorage' -or $binding.queueName -cne 'maester-validation' -or $binding.queueEncoding -cne 'base64'){throw 'Unexpected validation transport or binding fields.'}
   foreach($key in @('subscriptionId','resourceGroupName','operatorObjectId','packageETag','selectorETag','transport','queueName','queueEncoding')){
