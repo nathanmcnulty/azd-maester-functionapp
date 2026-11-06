@@ -10,7 +10,7 @@ try {
   $context=$request.context
   $binding=$request.binding
   Import-Module (Join-Path $PSScriptRoot 'FunctionValidation.Session.psm1') -Force
-  Import-Module (Join-Path $PSScriptRoot '../src/Maester.ValidationProtocol.psm1') -Force
+  Import-Module (Join-Path $PSScriptRoot '../src/Maester.ValidationProtocol.psm1')
   Assert-MaesterValidationContext $context|Out-Null
   if($binding.Count -ne 8 -or $binding.transport -cne 'QueueStorage' -or $binding.queueName -cne 'maester-validation' -or $binding.queueEncoding -cne 'base64'){throw 'Unexpected validation transport or binding fields.'}
   foreach($key in @('subscriptionId','resourceGroupName','operatorObjectId','packageETag','selectorETag','transport','queueName','queueEncoding')){
@@ -72,7 +72,11 @@ try {
     if($selector.ActiveDeploymentId -cne $context.activeDeploymentId -or $selector.LatestDeploymentId -cne $context.activeDeploymentId){throw 'Active deployment changed.'}
     $entry=$selector.Deployments[$context.activeDeploymentId]
     if($entry -isnot [Collections.IDictionary] -or $entry.Id -isnot [string] -or $entry.Id -cne $context.activeDeploymentId -or $entry.UploadedPackageName -isnot [string] -or ($entry.Status -isnot [string] -and $entry.Status -isnot [int] -and $entry.Status -isnot [long])){throw 'Invalid deployment entry shape.'}
-    if($entry.Complete -isnot [bool] -or -not $entry.Complete -or $entry.UploadedPackageName -cne 'released-package.zip' -or [string]$entry.Status -cne '4'){throw 'Active deployment is not complete.'}
+    if($entry.Complete -isnot [bool] -or -not $entry.Complete -or [string]$entry.Status -cne '4'){throw 'Active deployment is not complete.'}
+    # Legacy ZIP deploy uses an alias; OneDeploy stores the active ID archive.
+    # Neither an arbitrary filename nor another deployment's package is allowed.
+    if($entry.UploadedPackageName -cnotin @('released-package.zip',($context.activeDeploymentId+'.zip'))){throw 'Active deployment package name is not bound to this deployment.'}
+    $allowed[4]=$blob+'/deploymentpackage/'+$entry.UploadedPackageName
     $package=Send-ValidationRequest HEAD $allowed[4] $storageToken $null
     if($package.StatusCode -ne 200 -or $package.ETag -cne $binding.packageETag){throw 'Active package ETag changed.'}
     foreach($uri in @($allowed[5],$allowed[6])){

@@ -15,6 +15,7 @@ Describe 'Maester runner result boundary' {
     $harness = @'
 $ErrorActionPreference = 'Continue'
 $maesterInvokeParameters = @{}
+$validationFailureDiagnostic = @{ Value = $null; Reason = $null }
 Import-Module '__GATE__' -Force
 . '__FIXTURE__'
 $tempRoot = $env:RUNNER_TEST_TEMP_ROOT
@@ -27,11 +28,15 @@ function Write-Step { param([string] $Message) }
 function Assert-ValidationStartDeadline { } # This isolated report block is a scheduled invocation.
 function Invoke-Maester {
   if ($env:RUNNER_TEST_MODE -eq 'throw') { throw 'simulated execution failure' }
-  if ($env:RUNNER_TEST_MODE -eq 'result') {
+  if ($env:RUNNER_TEST_MODE -in @('result','framework-error')) {
     Set-Content -LiteralPath (Join-Path $tempRoot 'assessment.html') -Value '<html>security finding</html>'
     Set-Content $junitPath '<testsuites tests="5" errors="0" failures="1" disabled="3" />'
     $result = New-TestAssessmentResult $testsPath
     $result | Add-Member OutputFiles ([pscustomobject]@{ OutputHtmlFile = (Join-Path $tempRoot 'assessment.html') })
+    if ($env:RUNNER_TEST_MODE -eq 'framework-error') {
+      $result.Tests[0].Result='Error'; $result.PassedCount=0; $result.ErrorCount=1
+      $result.Tests[0].ErrorRecord=@('private tenant error payload')
+    }
     return $result
   }
 }
@@ -83,6 +88,20 @@ function Set-BlobContent {
     $LASTEXITCODE | Should -Be 0
     @($output) -join "`n" | Should -Match 'RUNNER_SUCCESS'
     Get-Content -LiteralPath (Join-Path $env:RUNNER_TEST_TEMP_ROOT 'assessment.html') -Raw | Should -Match 'security finding'
+  }
+  It 'logs bounded framework diagnostics before rejecting the report without attempting publication' {
+    $env:RUNNER_TEST_TEMP_ROOT = Join-Path $TestDrive 'framework-error'
+    $env:RUNNER_TEST_MODE = 'framework-error'
+    $env:RUNNER_TEST_STORAGE = 'test-account'
+    $env:RUNNER_TEST_FAIL_UPLOAD = '0'
+    New-Item -ItemType Directory -Path $env:RUNNER_TEST_TEMP_ROOT | Out-Null
+    $output = & pwsh -NoProfile -File $harnessPath 2>&1
+    $LASTEXITCODE | Should -Be 1
+    $text = @($output) -join "`n"
+    $text | Should -Match 'Assessment failure diagnostics:.*"ErrorCount":1.*"ErrorTestIds":\["MT.1068"\]'
+    $text | Should -Match 'assessment.maesterErrors'
+    $text | Should -Not -Match 'private tenant error payload|RUNNER_SUCCESS'
+    Test-Path -LiteralPath (Join-Path $env:RUNNER_TEST_TEMP_ROOT 'latest-attempted') | Should -BeFalse
   }
 
   It 'exits nonzero when publishing the latest report fails' {

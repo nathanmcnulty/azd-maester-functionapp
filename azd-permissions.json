@@ -643,7 +643,7 @@
         },
         {
           "path": "scripts/Setup-PostDeploy.ps1",
-          "sha256": "12bf9a052114f53d633a3b89484d9a33786fb4c3497f30614bb57d0cae32c4cd"
+          "sha256": "68f8dc219e17f99eb77aa3adcff8c41de2c731468219e22a91d422354427f15b"
         }
       ]
     },
@@ -669,7 +669,7 @@
         },
         {
           "path": "scripts/Setup-PostDeploy.ps1",
-          "sha256": "12bf9a052114f53d633a3b89484d9a33786fb4c3497f30614bb57d0cae32c4cd"
+          "sha256": "68f8dc219e17f99eb77aa3adcff8c41de2c731468219e22a91d422354427f15b"
         }
       ]
     },
@@ -691,7 +691,7 @@
         },
         {
           "path": "scripts/Setup-PostDeploy.ps1",
-          "sha256": "12bf9a052114f53d633a3b89484d9a33786fb4c3497f30614bb57d0cae32c4cd"
+          "sha256": "68f8dc219e17f99eb77aa3adcff8c41de2c731468219e22a91d422354427f15b"
         },
         {
           "path": "scripts/Maester-SetupConsent.psm1",
@@ -717,7 +717,7 @@
         },
         {
           "path": "scripts/Setup-PostDeploy.ps1",
-          "sha256": "12bf9a052114f53d633a3b89484d9a33786fb4c3497f30614bb57d0cae32c4cd"
+          "sha256": "68f8dc219e17f99eb77aa3adcff8c41de2c731468219e22a91d422354427f15b"
         },
         {
           "path": "scripts/Maester-SetupConsent.psm1",
@@ -743,7 +743,7 @@
         },
         {
           "path": "scripts/Setup-PostDeploy.ps1",
-          "sha256": "12bf9a052114f53d633a3b89484d9a33786fb4c3497f30614bb57d0cae32c4cd"
+          "sha256": "68f8dc219e17f99eb77aa3adcff8c41de2c731468219e22a91d422354427f15b"
         },
         {
           "path": "scripts/Maester-SetupConsent.psm1",
@@ -769,7 +769,7 @@
         },
         {
           "path": "scripts/Setup-PostDeploy.ps1",
-          "sha256": "12bf9a052114f53d633a3b89484d9a33786fb4c3497f30614bb57d0cae32c4cd"
+          "sha256": "68f8dc219e17f99eb77aa3adcff8c41de2c731468219e22a91d422354427f15b"
         },
         {
           "path": "scripts/Maester-SetupConsent.psm1",
@@ -795,7 +795,7 @@
         },
         {
           "path": "scripts/Setup-PostDeploy.ps1",
-          "sha256": "12bf9a052114f53d633a3b89484d9a33786fb4c3497f30614bb57d0cae32c4cd"
+          "sha256": "68f8dc219e17f99eb77aa3adcff8c41de2c731468219e22a91d422354427f15b"
         },
         {
           "path": "scripts/Maester-SetupConsent.psm1",
@@ -821,7 +821,7 @@
         },
         {
           "path": "scripts/Setup-PostDeploy.ps1",
-          "sha256": "12bf9a052114f53d633a3b89484d9a33786fb4c3497f30614bb57d0cae32c4cd"
+          "sha256": "68f8dc219e17f99eb77aa3adcff8c41de2c731468219e22a91d422354427f15b"
         },
         {
           "path": "scripts/Maester-SetupConsent.psm1",
@@ -847,7 +847,7 @@
         },
         {
           "path": "scripts/Setup-PostDeploy.ps1",
-          "sha256": "12bf9a052114f53d633a3b89484d9a33786fb4c3497f30614bb57d0cae32c4cd"
+          "sha256": "68f8dc219e17f99eb77aa3adcff8c41de2c731468219e22a91d422354427f15b"
         },
         {
           "path": "scripts/Maester-SetupConsent.psm1",

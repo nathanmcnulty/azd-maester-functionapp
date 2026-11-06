@@ -31,6 +31,21 @@ BeforeAll {
 }
 
 Describe 'Main Function App preflight' {
+  It 'accepts the repository solution identifier while preserving exact scope and identity binding' {
+    $resources = New-Resources
+    $resources[$functionId].tags.solution='azd-maester-functionapp'
+    $values=@{functionAppName='func-maester-123';functionAppPrincipalId=$principalId}
+    $resolve={ Resolve-MaesterMainDeploymentTarget -EnvironmentValues $values -NameOutput functionAppName -PrincipalOutput functionAppPrincipalId -ProviderType Microsoft.Web/sites -ApiVersion 2023-12-01 -SubscriptionId $subscriptionId -ResourceGroupName $resourceGroupName -EnvironmentName $environmentName -SolutionName $solutionName -Kind FunctionApp -GetResource {param($path) $resources[($path -split '\?')[0]]} }
+    (& $resolve).id | Should -Be $functionId
+    $resources[$functionId].tags.environment='another-environment'
+    {& $resolve} | Should -Throw '*scope, tags, and managed identity*'
+  }
+
+  It 'does not generalize Function solution aliases to unrelated values' -ForEach @('azd-maester-azureautomation','function-app-other','azd-maester-functionapp-extra','') {
+    Test-MaesterSolutionTag -Actual $_ -Expected function-app | Should -BeFalse
+    Test-MaesterSolutionTag -Actual azd-maester-functionapp -Expected automation-account | Should -BeFalse
+  }
+
   It 'binds the named deployed Function App and managed identity' {
     $resources = New-Resources
     $result = Resolve-MaesterMainDeploymentTarget -EnvironmentValues @{ functionAppName = 'func-maester-123'; functionAppPrincipalId = $principalId } -NameOutput 'functionAppName' -PrincipalOutput 'functionAppPrincipalId' -ProviderType 'Microsoft.Web/sites' -ApiVersion '2023-12-01' -SubscriptionId $subscriptionId -ResourceGroupName $resourceGroupName -EnvironmentName $environmentName -SolutionName $solutionName -Kind FunctionApp -GetResource { param($path) $resources[($path -split '\?')[0]] }
@@ -77,6 +92,16 @@ Describe 'Exact hosting plan summary' {
 }
 
 Describe 'Exact deployed resource binding' {
+  It 'accepts both explicit Function tag identifiers for storage and optional viewer' -ForEach @('function-app','azd-maester-functionapp') {
+    $resources=New-Resources
+    $resources[$storageId].tags.solution=$_
+    $result=Invoke-TargetResolution -Values @{STORAGE_ACCOUNT_NAME='stmaester123';WEB_APP_ENABLED='true';WEB_APP_NAME='app-maester-123'} -Resources $resources
+    $result.StorageAccount.id | Should -Be $storageId
+    $result.WebApp.id | Should -Be $webAppId
+    $resources[$storageId].tags.solution='azd-maester-azureautomation'
+    {Invoke-TargetResolution -Values @{STORAGE_ACCOUNT_NAME='stmaester123';WEB_APP_ENABLED='false'} -Resources $resources} | Should -Throw '*storage account*'
+  }
+
   It 'binds the named storage and Web App, ignoring unrelated sites' {
     $result = Invoke-TargetResolution -Values @{ STORAGE_ACCOUNT_NAME = 'stmaester123'; WEB_APP_ENABLED = 'true'; INCLUDE_WEB_APP = 'false'; WEB_APP_NAME = 'app-maester-123' } -Resources (New-Resources)
     $result.StorageAccount.id | Should -Be $storageId

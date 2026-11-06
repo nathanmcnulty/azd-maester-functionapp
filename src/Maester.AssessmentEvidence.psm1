@@ -22,7 +22,8 @@ function Get-MaesterAssessmentEvidence {
     [Parameter(Mandatory)][AllowNull()][AllowEmptyCollection()][object[]]$Output,
     [Parameter(Mandatory)][string]$JunitPath,
     [Parameter(Mandatory)][string]$TestsPath,
-    [Parameter(Mandatory)][string]$ReportPath
+    [Parameter(Mandatory)][string]$ReportPath,
+    [scriptblock]$OnFailureDiagnostic
   )
   $ErrorActionPreference = 'Stop'
   # Ignore incidental success-stream strings, but never select one of multiple
@@ -47,7 +48,25 @@ function Get-MaesterAssessmentEvidence {
   $sum = 0L
   foreach ($state in 'Passed','Failed','Error','Investigate','Skipped','NotRun') { $sum += $counts[$state + 'Count'] }
   if ($sum -ne $counts.TotalCount -or $tests.Count -ne $counts.TotalCount -or $sum -eq 0) { throw 'assessment.countMismatch' }
-  if ($counts.ErrorCount -ne 0) { throw 'assessment.maesterErrors' }
+  if ($counts.ErrorCount -ne 0) {
+    # Emit only validated counts and bounded public Maester case identifiers.
+    # Error messages, records and report contents can contain tenant data.
+    $errorTests = @($tests | Where-Object Result -CEQ 'Error')
+    $identified = @($errorTests | Where-Object {
+      $_.PSObject.Properties['Id'] -and $_.Id -is [string] -and $_.Id -cmatch '^MT\.[0-9]{4}\z'
+    })
+    $allIds = @($identified | ForEach-Object { $_.Id } | Sort-Object -Unique)
+    $diagnostic = [ordered]@{
+      Counts = $counts
+      ErrorTestIds = @($allIds | Select-Object -First 32)
+      UniqueErrorTestIdCount = $allIds.Count
+      UnidentifiedErrorCount = $errorTests.Count - $identified.Count
+    }
+    try {
+      if ($OnFailureDiagnostic) { & $OnFailureDiagnostic $diagnostic | Out-Null }
+    }
+    finally { throw 'assessment.maesterErrors' }
+  }
   # Maester reclassifies only selected exception types. An IOException or a
   # mixed assertion/runtime error can still be labelled Failed (or Investigate).
   # Check every record, never only the first, using Pester's stable marker IDs.

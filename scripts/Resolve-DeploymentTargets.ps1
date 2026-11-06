@@ -1,4 +1,14 @@
 #Requires -Version 7.6
+function Test-MaesterSolutionTag {
+  param($Actual, [Parameter(Mandatory)][string]$Expected)
+  if ($Actual -isnot [string]) { return $false }
+  # The template's original identifier and the portfolio's repository identifier
+  # describe this same Function solution. Keep all other solution names exact.
+  $functionNames = @('function-app', 'azd-maester-functionapp')
+  if ($Expected -in $functionNames) { return $Actual -in $functionNames }
+  return $Actual -ieq $Expected
+}
+
 function Assert-MaesterAzdEnvironmentContext {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$EnvironmentName)
@@ -67,7 +77,7 @@ function Resolve-MaesterDeploymentTargets {
   $storageId = "$scope/providers/Microsoft.Storage/storageAccounts/$storageName"
   $storage = & $GetResource "${storageId}?api-version=2023-05-01"
   if (-not $storage -or $storage.id -ine $storageId -or $storage.name -ine $storageName -or $storage.type -ine 'Microsoft.Storage/storageAccounts' -or
-      -not $storage.tags -or $storage.tags.workload -ine 'maester' -or $storage.tags.solution -ine $SolutionName -or
+      -not $storage.tags -or $storage.tags.workload -ine 'maester' -or -not (Test-MaesterSolutionTag -Actual $storage.tags.solution -Expected $SolutionName) -or
       $storage.tags.environment -ine $EnvironmentName -or $storage.tags.managedBy -ine 'azd') {
     throw "The deployed storage account '$storageName' was not found at its exact subscription and resource-group scope."
   }
@@ -81,7 +91,7 @@ function Resolve-MaesterDeploymentTargets {
     $webAppId = "$scope/providers/Microsoft.Web/sites/$webAppName"
     $webApp = & $GetResource "${webAppId}?api-version=2023-12-01"
     if (-not $webApp -or $webApp.id -ine $webAppId -or $webApp.name -ine $webAppName -or $webApp.type -ine 'Microsoft.Web/sites' -or
-        -not $webApp.tags -or $webApp.tags.workload -ine 'maester' -or $webApp.tags.solution -ine $SolutionName -or
+        -not $webApp.tags -or $webApp.tags.workload -ine 'maester' -or -not (Test-MaesterSolutionTag -Actual $webApp.tags.solution -Expected $SolutionName) -or
         $webApp.tags.environment -ine $EnvironmentName -or $webApp.tags.managedBy -ine 'azd' -or $webApp.kind -like '*functionapp*') {
       throw "The deployed Web App '$webAppName' was not found at its exact subscription and resource-group scope."
     }
@@ -120,7 +130,7 @@ function Resolve-MaesterMainDeploymentTarget {
   $resource = & $GetResource "${id}?api-version=$ApiVersion"
   if (-not $resource -or $resource.id -ine $id -or $resource.name -ine $name -or
       $resource.type -ine $ProviderType -or -not $resource.tags -or
-      $resource.tags.workload -ine 'maester' -or $resource.tags.solution -ine $SolutionName -or
+      $resource.tags.workload -ine 'maester' -or -not (Test-MaesterSolutionTag -Actual $resource.tags.solution -Expected $SolutionName) -or
       $resource.tags.environment -ine $EnvironmentName -or $resource.tags.managedBy -ine 'azd' -or
       [string]$resource.identity.principalId -ine $principal -or
       [string]$resource.identity.type -notmatch '(^|,\s*)SystemAssigned($|\s*,)') {

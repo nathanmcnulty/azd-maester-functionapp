@@ -1,6 +1,6 @@
 #Requires -Version 7.6
 Set-StrictMode -Version Latest
-Import-Module (Join-Path $PSScriptRoot '../src/Maester.ValidationProtocol.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot '../src/Maester.ValidationProtocol.psm1')
 
 function Write-MaesterValidationRecord {
   param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)]$Value)

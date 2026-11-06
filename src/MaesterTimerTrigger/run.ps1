@@ -3,10 +3,14 @@
 # Timer-triggered Azure Function that runs Maester assessments.
 # Reads configuration from Function App application settings (environment variables).
 
-param($Timer, $TriggerMetadata, [Collections.IDictionary]$ValidationContext)
+param($Timer, $TriggerMetadata, [Collections.IDictionary]$ValidationContext, [switch]$RequireValidationContext)
 
 $ErrorActionPreference = 'Continue'
 $ConfirmPreference = 'None'
+
+if ($RequireValidationContext -and -not $ValidationContext) {
+  throw 'Validation context is required before assessment.'
+}
 
 # Global stopwatch for timing diagnostics
 $script:sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -78,7 +82,7 @@ function Write-ValidationReceipt {
   if ($validationTerminalAttempted) { throw 'Terminal evidence was already attempted; preserve its uncertain outcome.' }
   $script:validationTerminalAttempted = $true
   $token = Get-PlainToken -ResourceUrl 'https://storage.azure.com/'
-  Complete-MaesterValidationClaim -Claim $validationClaim -Status $Status -StorageAccountName $StorageAccountName -Token $token
+  Complete-MaesterValidationClaim -Claim $validationClaim -Status $Status -StorageAccountName $StorageAccountName -Token $token -FailureDiagnostic $validationFailureDiagnostic.Value -FailureReason $validationFailureDiagnostic.Reason
 }
 
 function Assert-ValidationStartDeadline {
@@ -155,19 +159,23 @@ Write-Step "Starting Maester function trigger"
 $validationInvocationId = $null
 $validationClaim = $null
 $script:validationTerminalAttempted = $false
+$validationFailureDiagnostic = @{ Value = $null; Reason = $null }
 if ($ValidationContext) {
   Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'Maester.ValidationProtocol.psm1') -Force -ErrorAction Stop
   Assert-MaesterValidationContext $ValidationContext | Out-Null
   $invocationGuid = [guid]::Empty
-  if (-not $TriggerMetadata -or $TriggerMetadata.sys.MethodName -ne 'MaesterValidationTrigger' -or
-      -not [guid]::TryParse([string]$TriggerMetadata.sys.RandGuid, [ref]$invocationGuid) -or $invocationGuid -eq [guid]::Empty) {
+  if (-not $TriggerMetadata -or $TriggerMetadata.FunctionName -isnot [string] -or
+      $TriggerMetadata.FunctionName -cne 'MaesterValidationTrigger' -or
+      ($TriggerMetadata.InvocationId -isnot [string] -and $TriggerMetadata.InvocationId -isnot [guid]) -or
+      -not [guid]::TryParseExact([string]$TriggerMetadata.InvocationId, 'D', [ref]$invocationGuid) -or $invocationGuid -eq [guid]::Empty) {
     throw 'Validation invocation metadata is missing or invalid.'
   }
   $validationInvocationId = $invocationGuid
   $validatedSourceDigest=Get-MaesterValidationSourceDigest -Root (Split-Path $PSScriptRoot -Parent)
   $validatedConfigurationDigest=Get-MaesterValidationConfigurationDigest -Settings ([Environment]::GetEnvironmentVariables('Process'))
+  Write-Step "Validation preflight: PowerShell=$($PSVersionTable.PSVersion); Source=$validatedSourceDigest; Configuration=$validatedConfigurationDigest"
   if((Get-MaesterValidationHostQueueAccount -Settings ([Environment]::GetEnvironmentVariables('Process'))) -cne $ValidationContext.queueStorageAccountName){throw 'Validation queue account differs from the actual host connection.'}
-  if($validatedSourceDigest -cne $ValidationContext.sourceSha256 -or $validatedConfigurationDigest -cne $ValidationContext.configurationSha256 -or $PSVersionTable.PSVersion.ToString(2) -cne $ValidationContext.runtimeVersion){throw 'Validation source, configuration or runtime differs before module execution.'}
+  if($validatedSourceDigest -cne $ValidationContext.sourceSha256 -or $validatedConfigurationDigest -cne $ValidationContext.configurationSha256 -or (Get-MaesterValidationRuntimeVersion) -cne $ValidationContext.runtimeVersion){throw 'Validation source, configuration or runtime differs before module execution.'}
 }
 
 if ($Timer.IsPastDue) {
@@ -479,7 +487,11 @@ Write-Step 'Invoke-Maester execution completed'
 # ──────────────────────────────────────────────
 
 $outputHtmlPath = Join-Path $tempRoot 'assessment.html'
-$assessmentEvidence = Get-MaesterAssessmentEvidence -Output $maesterOutput -JunitPath $junitPath -TestsPath $testsPath -ReportPath $outputHtmlPath -ErrorAction Stop
+$assessmentEvidence = Get-MaesterAssessmentEvidence -Output $maesterOutput -JunitPath $junitPath -TestsPath $testsPath -ReportPath $outputHtmlPath -OnFailureDiagnostic {
+  param($diagnostic)
+  $validationFailureDiagnostic.Value = $diagnostic
+  Write-Information -MessageData ('Assessment failure diagnostics: {0}' -f ($diagnostic | ConvertTo-Json -Depth 4 -Compress)) -InformationAction Continue
+} -ErrorAction Stop
 Write-Step ("Assessment counts: {0}" -f ($assessmentEvidence.Counts | ConvertTo-Json -Compress))
 Write-Step 'Assessment health verified. Policy findings and service coverage are reported separately; mail delivery is unverified.'
 
@@ -534,6 +546,7 @@ Write-ValidationReceipt -Status 'Succeeded'
 }
 catch {
   $runError = $_
+  $validationFailureDiagnostic.Reason = $runError.Exception.Message
   if ($validationClaim -and -not $validationTerminalAttempted) {
     try { Write-ValidationReceipt -Status 'Failed' }
     catch { Write-Warning "Could not write failed validation receipt: $($_.Exception.Message)" }

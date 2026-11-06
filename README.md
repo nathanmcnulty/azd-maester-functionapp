@@ -95,6 +95,16 @@ stop setup before role assignments or Easy Auth changes. The default invocation
 returns a plan without deploying code; use the documented reviewed apply flow. The postprovision
 summary uses the Function App and optional Web App's exact hosting plan IDs.
 
+Applying through `Setup-PostDeploy.ps1` also builds and uploads Function code by
+default. For permission-only maintenance, use `-Apply -ApprovedPlanHash <hash> -AccessOnly` to apply the reviewed access plan and save its receipts without a
+code upload. The normal postprovision path retains its deployment step.
+
+The target resolver recognizes the original `function-app` solution tag and the
+portfolio's `azd-maester-functionapp` identifier for this Function solution.
+Workload, environment, management tags, exact resource scope and managed identity
+must still match. This keeps retained environments usable without changing their
+existing ownership tags.
+
 Setup, direct ZIP deployment, and direct validation require the expected tenant
 via `-TenantId` or `AZURE_TENANT_ID`. They check fresh ARM subscription metadata
 for the exact selected subscription, tenant, and `Enabled` state; cached CLI
@@ -180,7 +190,10 @@ dependency. Compute the configuration hash with
 `operatorObjectId`, `packageETag`, `selectorETag`, `transport` (`QueueStorage`),
 `queueName` (`maester-validation`) and `queueEncoding` (`base64`). The deployment
 ID and strong ETags must come from a verified capture/deployment receipt for the
-same site and ZIP. The controller verifies the site's Flex deployment storage
+same site and ZIP. The active package may use the legacy `released-package.zip`
+alias or the active deployment's canonical GUID filename. If the service repacks
+the ZIP, verify every file against the reviewed source before using the captured
+archive and its SHA-256 in a request. The controller verifies the site's Flex deployment storage
 binding, selector and package ETags before submission. Review scheduled/queue
 concurrency, assessment side effects, containment and restart procedures before
 running this command:
@@ -205,6 +218,21 @@ terminal receipt. Queue acceptance, message expiry, a client timeout and an app'
 control-plane `Stopped` state do not establish invocation completion. An absent
 terminal receipt remains `Unresolved`; the controller does not perform app stop
 or claim cancellation. Native containment still requires separate qualification.
+
+Failed terminal blobs include `maester_failure_diagnostic` metadata: Base64 JSON
+written in the same conditional PUT. It contains a whitelisted failure code
+(`unclassified` for other errors), plus validated counts and at most 32 public
+`MT.xxxx` case IDs when available. Raw error records, exception text and report
+contents are excluded. The schema-2 JSON body and controller result are unchanged.
+Console telemetry can be sampled or delayed; inspect metadata on the matching
+terminal blob instead of relying solely on logs. Older receipts may lack it.
+
+```powershell
+$blob = az storage blob show --subscription $subscriptionId --account-name $storageAccountName --container-name validation --name "$validationId.json" --auth-mode login -o json | ConvertFrom-Json
+if ($blob.metadata.maester_failure_diagnostic) {
+  [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($blob.metadata.maester_failure_diagnostic)) | ConvertFrom-Json
+}
+```
 
 For the optional postprovision validation hook, supply both
 `FUNCTION_VALIDATION_REQUEST_PATH` and `FUNCTION_VALIDATION_RECEIPT_PATH` in
