@@ -486,7 +486,10 @@ Write-Step 'Invoke-Maester execution completed'
 # ──────────────────────────────────────────────
 
 $outputHtmlPath = Join-Path $tempRoot 'assessment.html'
-$assessmentEvidence = Get-MaesterAssessmentEvidence -Output $maesterOutput -JunitPath $junitPath -TestsPath $testsPath -ReportPath $outputHtmlPath -ErrorAction Stop
+$assessmentEvidence = Get-MaesterAssessmentEvidence -Output $maesterOutput -JunitPath $junitPath -TestsPath $testsPath -ReportPath $outputHtmlPath -OnFailureDiagnostic {
+  param($diagnostic)
+  Write-Information -MessageData ('Assessment failure diagnostics: {0}' -f ($diagnostic | ConvertTo-Json -Depth 4 -Compress)) -InformationAction Continue
+} -ErrorAction Stop
 Write-Step ("Assessment counts: {0}" -f ($assessmentEvidence.Counts | ConvertTo-Json -Compress))
 Write-Step 'Assessment health verified. Policy findings and service coverage are reported separately; mail delivery is unverified.'
 

@@ -74,6 +74,33 @@ Describe 'Maester assessment integrity independently of compliance' {
     }
     { Get-MaesterAssessmentEvidence -Output $result -JunitPath $junit -TestsPath $testsPath -ReportPath $report } | Should -Throw '*coreNotExecuted*'
   }
+  It 'retains the error gate while emitting bounded public identifiers without tenant details' {
+    $result.Tests = @(for ($i=1000; $i -lt 1040; $i++) {
+      [pscustomobject]@{ Id="MT.$i"; Result='Error'; ErrorRecord=@('private tenant token secret') }
+    }) + @([pscustomobject]@{ Id='private-tenant-identifier'; Result='Error'; ErrorRecord=@('private payload') })
+    $result.TotalCount=41; $result.PassedCount=0; $result.FailedCount=0; $result.ErrorCount=41; $result.SkippedCount=0; $result.NotRunCount=0
+    $captured = [Collections.Generic.List[object]]::new()
+    { Get-MaesterAssessmentEvidence -Output $result -JunitPath $junit -TestsPath $testsPath -ReportPath $report -OnFailureDiagnostic { param($value) $captured.Add($value) } } | Should -Throw '*maesterErrors*'
+    $captured.Count | Should -Be 1
+    $captured[0].Counts.ErrorCount | Should -Be 41
+    $captured[0].ErrorTestIds.Count | Should -Be 32
+    $captured[0].UniqueErrorTestIdCount | Should -Be 40
+    $captured[0].UnidentifiedErrorCount | Should -Be 1
+    ($captured[0] | ConvertTo-Json -Depth 5) | Should -Not -Match 'private|tenant|secret|payload|ErrorRecord'
+  }
+  It 'preserves the assessment error if the diagnostic sink fails and no IDs are safe' {
+    $result.Tests[0].Result='Error'; $result.Tests[0].Id='private identifier'
+    $result.PassedCount=0; $result.ErrorCount=1
+    { Get-MaesterAssessmentEvidence -Output $result -JunitPath $junit -TestsPath $testsPath -ReportPath $report -OnFailureDiagnostic { throw 'sink failed' } } | Should -Throw '*maesterErrors*'
+  }
+  It 'does not diagnose invalid counts or healthy policy findings as framework errors' {
+    $captured = [Collections.Generic.List[object]]::new()
+    $sink = { param($value) $captured.Add($value) }
+    (Get-MaesterAssessmentEvidence -Output $result -JunitPath $junit -TestsPath $testsPath -ReportPath $report -OnFailureDiagnostic $sink).Outcome | Should -Be 'Completed'
+    $result.ErrorCount=1
+    { Get-MaesterAssessmentEvidence -Output $result -JunitPath $junit -TestsPath $testsPath -ReportPath $report -OnFailureDiagnostic $sink } | Should -Throw '*countMismatch*'
+    $captured.Count | Should -Be 0
+  }
   It 'rejects malformed, absent, unsafe and inconsistent JUnit <_>' -ForEach @('missing','malformed','doctype','duplicate-root','negative','missing-count','total','engine') {
     switch ($_) {
       'missing' { Remove-Item $junit }
