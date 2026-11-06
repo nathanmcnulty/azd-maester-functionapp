@@ -9,6 +9,11 @@ Describe 'Immutable server execution ownership' {
     $writer={param($uri,$token,$json) if($store.ContainsKey($uri)){throw 'HTTP412 existing immutable object'};$store.Add($uri,$json)}
     $parameters=@{Context=$context;InvocationId=[guid]'77777777-7777-4777-8777-777777777777';SourceDigest=$context.sourceSha256;ConfigurationDigest=$context.configurationSha256;SiteName=$context.siteName;StorageAccountName=$context.storageAccountName;TenantId=$context.tenantId;WorkloadIdentityId=$context.workloadIdentityId;RuntimeVersion='7.6';Token='synthetic';Now=$now;Writer=$writer}
   }
+  It 'uses the real PowerShell runtime when the claim caller omits its version override' {
+    $parameters.Remove('RuntimeVersion')
+    (New-MaesterValidationClaim @parameters).status | Should -BeExactly 'Started'
+    $store.Count | Should -Be 1
+  }
   It 'creates one started claim and rejects both same and different invocation duplicates' {
     $claim=New-MaesterValidationClaim @parameters
     $claim.status|Should -BeExactly 'Started'

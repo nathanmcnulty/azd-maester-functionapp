@@ -6,6 +6,12 @@ function Get-MaesterValidationHash {
   [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Text)))
 }
 
+function Get-MaesterValidationRuntimeVersion {
+  param([System.Management.Automation.SemanticVersion]$Version = $PSVersionTable.PSVersion)
+  if ($Version.PreReleaseLabel) { throw 'Validation requires a stable PowerShell runtime.' }
+  '{0}.{1}' -f $Version.Major, $Version.Minor
+}
+
 function ConvertFrom-MaesterValidationJson {
   param([Parameter(Mandatory)][string]$Json)
   if ([Text.Encoding]::UTF8.GetByteCount($Json) -gt 16384) { throw 'Validation JSON exceeds its bound.' }
@@ -153,7 +159,7 @@ function New-MaesterValidationClaim {
     [Parameter(Mandatory)]$Context,[Parameter(Mandatory)][guid]$InvocationId,
     [Parameter(Mandatory)][string]$SourceDigest,[Parameter(Mandatory)][string]$ConfigurationDigest,
     [Parameter(Mandatory)][string]$SiteName,[Parameter(Mandatory)][string]$StorageAccountName,
-    [Parameter(Mandatory)][string]$TenantId,[Parameter(Mandatory)][string]$WorkloadIdentityId,[string]$RuntimeVersion = ($PSVersionTable.PSVersion.ToString(2)),
+    [Parameter(Mandatory)][string]$TenantId,[Parameter(Mandatory)][string]$WorkloadIdentityId,[string]$RuntimeVersion = (Get-MaesterValidationRuntimeVersion),
     [Parameter(Mandatory)][string]$Token,[DateTimeOffset]$Now = [DateTimeOffset]::UtcNow,
     [scriptblock]$Writer = { param($uri,$token,$json) Send-MaesterValidationEvidence -Uri $uri -Token $token -Json $json }
   )
@@ -180,4 +186,4 @@ function Complete-MaesterValidationClaim {
   & $Writer "https://$StorageAccountName.blob.core.windows.net/validation/$($Claim.validationId).json" $Token ($receipt | ConvertTo-Json -Compress)
 }
 
-Export-ModuleMember -Function Get-MaesterValidationHash,ConvertFrom-MaesterValidationJson,Assert-MaesterValidationContext,Get-MaesterValidationContextJson,Get-MaesterValidationSourceDigest,Get-MaesterValidationHostQueueAccount,Get-MaesterValidationQueueMessage,Get-MaesterValidationConfigurationDigest,New-MaesterValidationClaim,Complete-MaesterValidationClaim
+Export-ModuleMember -Function Get-MaesterValidationHash,Get-MaesterValidationRuntimeVersion,ConvertFrom-MaesterValidationJson,Assert-MaesterValidationContext,Get-MaesterValidationContextJson,Get-MaesterValidationSourceDigest,Get-MaesterValidationHostQueueAccount,Get-MaesterValidationQueueMessage,Get-MaesterValidationConfigurationDigest,New-MaesterValidationClaim,Complete-MaesterValidationClaim

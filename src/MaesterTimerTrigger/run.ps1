@@ -167,7 +167,7 @@ if ($ValidationContext) {
   $validatedSourceDigest=Get-MaesterValidationSourceDigest -Root (Split-Path $PSScriptRoot -Parent)
   $validatedConfigurationDigest=Get-MaesterValidationConfigurationDigest -Settings ([Environment]::GetEnvironmentVariables('Process'))
   if((Get-MaesterValidationHostQueueAccount -Settings ([Environment]::GetEnvironmentVariables('Process'))) -cne $ValidationContext.queueStorageAccountName){throw 'Validation queue account differs from the actual host connection.'}
-  if($validatedSourceDigest -cne $ValidationContext.sourceSha256 -or $validatedConfigurationDigest -cne $ValidationContext.configurationSha256 -or $PSVersionTable.PSVersion.ToString(2) -cne $ValidationContext.runtimeVersion){throw 'Validation source, configuration or runtime differs before module execution.'}
+  if($validatedSourceDigest -cne $ValidationContext.sourceSha256 -or $validatedConfigurationDigest -cne $ValidationContext.configurationSha256 -or (Get-MaesterValidationRuntimeVersion) -cne $ValidationContext.runtimeVersion){throw 'Validation source, configuration or runtime differs before module execution.'}
 }
 
 if ($Timer.IsPastDue) {

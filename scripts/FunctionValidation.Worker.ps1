@@ -72,7 +72,11 @@ try {
     if($selector.ActiveDeploymentId -cne $context.activeDeploymentId -or $selector.LatestDeploymentId -cne $context.activeDeploymentId){throw 'Active deployment changed.'}
     $entry=$selector.Deployments[$context.activeDeploymentId]
     if($entry -isnot [Collections.IDictionary] -or $entry.Id -isnot [string] -or $entry.Id -cne $context.activeDeploymentId -or $entry.UploadedPackageName -isnot [string] -or ($entry.Status -isnot [string] -and $entry.Status -isnot [int] -and $entry.Status -isnot [long])){throw 'Invalid deployment entry shape.'}
-    if($entry.Complete -isnot [bool] -or -not $entry.Complete -or $entry.UploadedPackageName -cne 'released-package.zip' -or [string]$entry.Status -cne '4'){throw 'Active deployment is not complete.'}
+    if($entry.Complete -isnot [bool] -or -not $entry.Complete -or [string]$entry.Status -cne '4'){throw 'Active deployment is not complete.'}
+    # Legacy ZIP deploy uses an alias; OneDeploy stores the active ID archive.
+    # Neither an arbitrary filename nor another deployment's package is allowed.
+    if($entry.UploadedPackageName -cnotin @('released-package.zip',($context.activeDeploymentId+'.zip'))){throw 'Active deployment package name is not bound to this deployment.'}
+    $allowed[4]=$blob+'/deploymentpackage/'+$entry.UploadedPackageName
     $package=Send-ValidationRequest HEAD $allowed[4] $storageToken $null
     if($package.StatusCode -ne 200 -or $package.ETag -cne $binding.packageETag){throw 'Active package ETag changed.'}
     foreach($uri in @($allowed[5],$allowed[6])){

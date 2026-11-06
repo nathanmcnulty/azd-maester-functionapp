@@ -180,7 +180,10 @@ dependency. Compute the configuration hash with
 `operatorObjectId`, `packageETag`, `selectorETag`, `transport` (`QueueStorage`),
 `queueName` (`maester-validation`) and `queueEncoding` (`base64`). The deployment
 ID and strong ETags must come from a verified capture/deployment receipt for the
-same site and ZIP. The controller verifies the site's Flex deployment storage
+same site and ZIP. The active package may use the legacy `released-package.zip`
+alias or the active deployment's canonical GUID filename. If the service repacks
+the ZIP, verify every file against the reviewed source before using the captured
+archive and its SHA-256 in a request. The controller verifies the site's Flex deployment storage
 binding, selector and package ETags before submission. Review scheduled/queue
 concurrency, assessment side effects, containment and restart procedures before
 running this command:

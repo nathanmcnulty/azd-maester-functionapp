@@ -92,8 +92,9 @@ namespace AzdMaesterValidation {
       } else if (uri.Host == Env("AZD_FAKE_STORAGE") + ".blob.core.windows.net" && path == "/deploymentpackage/kudu-state.json" && method == "GET") {
         etag = Env("AZD_FAKE_SELECTOR_ETAG");
         var id = Env("AZD_FAKE_DEPLOYMENT");
-        response = "{\"ActiveDeploymentId\":" + JsonSerializer.Serialize(id) + ",\"LatestDeploymentId\":" + JsonSerializer.Serialize(id) + ",\"Deployments\":{" + JsonSerializer.Serialize(id) + ":{\"Id\":" + JsonSerializer.Serialize(id) + ",\"Complete\":true,\"Status\":4,\"UploadedPackageName\":\"released-package.zip\"}}}";
-      } else if (uri.Host == Env("AZD_FAKE_STORAGE") + ".blob.core.windows.net" && path == "/deploymentpackage/released-package.zip" && method == "HEAD") {
+        var packageName = mode == "GuidPackage" ? id + ".zip" : mode == "ForeignPackage" ? "99999999-9999-4999-8999-999999999999.zip" : mode == "TraversalPackage" ? "../released-package.zip" : "released-package.zip";
+        response = "{\"ActiveDeploymentId\":" + JsonSerializer.Serialize(id) + ",\"LatestDeploymentId\":" + JsonSerializer.Serialize(id) + ",\"Deployments\":{" + JsonSerializer.Serialize(id) + ":{\"Id\":" + JsonSerializer.Serialize(id) + ",\"Complete\":true,\"Status\":4,\"UploadedPackageName\":" + JsonSerializer.Serialize(packageName) + "}}}";
+      } else if (uri.Host == Env("AZD_FAKE_STORAGE") + ".blob.core.windows.net" && (path == "/deploymentpackage/released-package.zip" || path == "/deploymentpackage/" + Env("AZD_FAKE_DEPLOYMENT") + ".zip") && method == "HEAD") {
         etag = Env("AZD_FAKE_PACKAGE_ETAG"); response = "";
       } else if (uri.Host == Env("AZD_FAKE_STORAGE") + ".blob.core.windows.net" && path.StartsWith("/validation/", StringComparison.Ordinal)) {
         var reconcile = mode == "ReconcileStopped";
@@ -176,6 +177,24 @@ function script:Get-WorkerTrace {
 }
 
 Describe 'Synthetic worker provider boundary' {
+  It 'binds a modern deployment GUID archive before the single enqueue' {
+    $request=New-WorkerRequest
+    $run=Invoke-SyntheticWorker $request 'GuidPackage'
+    $trace=Get-WorkerTrace $run.TracePath
+    $run.Result.ValidationPassed|Should -BeTrue
+    @($trace|Where-Object kind -CEQ 'queue-post').Count|Should -Be 1
+    @($trace|Where-Object {$_.kind -ceq 'http' -and $_.method -ceq 'HEAD' -and $_.path -ceq ('/deploymentpackage/'+$script:deployment+'.zip')}).Count|Should -Be 1
+  }
+  It 'rejects an unbound uploaded archive before package access or enqueue (<Mode>)' -ForEach @(
+    @{Mode='ForeignPackage'},@{Mode='TraversalPackage'}
+  ) {
+    $request=New-WorkerRequest -DeadlineSeconds 6
+    $run=Invoke-SyntheticWorker $request $Mode
+    $trace=Get-WorkerTrace $run.TracePath
+    @($trace|Where-Object kind -CEQ 'queue-post').Count|Should -Be 0
+    @($trace|Where-Object {$_.kind -ceq 'http' -and $_.method -ceq 'HEAD'}).Count|Should -Be 0
+    $run.Result.ValidationPassed|Should -BeFalse
+  }
   It 'enqueues once and reconciles a completed result after HTTP 201 or a lost response (<Mode>)' -ForEach @(
     @{Mode='Queue201'},@{Mode='LostResponse'}
   ) {
