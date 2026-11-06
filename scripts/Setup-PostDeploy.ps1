@@ -38,6 +38,7 @@ param(
   [switch]$IncludeMailSend,
   [switch]$IncludeReportSettingsWrite,
   [switch]$Apply,
+  [switch]$AccessOnly,
   [string]$ApprovedPlanHash,
   [switch]$InteractiveConsent,
   [switch]$AllowInteractiveGraphLogin,
@@ -273,6 +274,11 @@ if ($accessResult.EasyAuth) {
 # ──────────────────────────────────────────────
 # Deploy Function App code via zip deploy
 # ──────────────────────────────────────────────
+
+if ($AccessOnly) {
+  Write-Host 'The reviewed access plan was applied. Code deployment was not requested.'
+  return $accessResult
+}
 
 $deployArgs = @{
   SubscriptionId    = $SubscriptionId

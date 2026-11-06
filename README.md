@@ -95,6 +95,10 @@ stop setup before role assignments or Easy Auth changes. The default invocation
 returns a plan without deploying code; use the documented reviewed apply flow. The postprovision
 summary uses the Function App and optional Web App's exact hosting plan IDs.
 
+Applying through `Setup-PostDeploy.ps1` also builds and uploads Function code by
+default. For permission-only maintenance, use `-Apply -ApprovedPlanHash <hash> -AccessOnly` to apply the reviewed access plan and save its receipts without a
+code upload. The normal postprovision path retains its deployment step.
+
 The target resolver recognizes the original `function-app` solution tag and the
 portfolio's `azd-maester-functionapp` identifier for this Function solution.
 Workload, environment, management tags, exact resource scope and managed identity
