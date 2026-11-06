@@ -1,4 +1,4 @@
-﻿{
+{
   "bindings": [
     {
       "name": "Timer",
@@ -6,5 +6,6 @@
       "direction": "in",
       "schedule": "0 0 0 * * 0"
     }
-  ]
+  ],
+  "scriptFile": "trigger.ps1"
 }
