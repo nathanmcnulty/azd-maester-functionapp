@@ -82,7 +82,7 @@ function Write-ValidationReceipt {
   if ($validationTerminalAttempted) { throw 'Terminal evidence was already attempted; preserve its uncertain outcome.' }
   $script:validationTerminalAttempted = $true
   $token = Get-PlainToken -ResourceUrl 'https://storage.azure.com/'
-  Complete-MaesterValidationClaim -Claim $validationClaim -Status $Status -StorageAccountName $StorageAccountName -Token $token
+  Complete-MaesterValidationClaim -Claim $validationClaim -Status $Status -StorageAccountName $StorageAccountName -Token $token -FailureDiagnostic $validationFailureDiagnostic.Value -FailureReason $validationFailureDiagnostic.Reason
 }
 
 function Assert-ValidationStartDeadline {
@@ -159,6 +159,7 @@ Write-Step "Starting Maester function trigger"
 $validationInvocationId = $null
 $validationClaim = $null
 $script:validationTerminalAttempted = $false
+$validationFailureDiagnostic = @{ Value = $null; Reason = $null }
 if ($ValidationContext) {
   Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'Maester.ValidationProtocol.psm1') -Force -ErrorAction Stop
   Assert-MaesterValidationContext $ValidationContext | Out-Null
@@ -488,6 +489,7 @@ Write-Step 'Invoke-Maester execution completed'
 $outputHtmlPath = Join-Path $tempRoot 'assessment.html'
 $assessmentEvidence = Get-MaesterAssessmentEvidence -Output $maesterOutput -JunitPath $junitPath -TestsPath $testsPath -ReportPath $outputHtmlPath -OnFailureDiagnostic {
   param($diagnostic)
+  $validationFailureDiagnostic.Value = $diagnostic
   Write-Information -MessageData ('Assessment failure diagnostics: {0}' -f ($diagnostic | ConvertTo-Json -Depth 4 -Compress)) -InformationAction Continue
 } -ErrorAction Stop
 Write-Step ("Assessment counts: {0}" -f ($assessmentEvidence.Counts | ConvertTo-Json -Compress))
@@ -544,6 +546,7 @@ Write-ValidationReceipt -Status 'Succeeded'
 }
 catch {
   $runError = $_
+  $validationFailureDiagnostic.Reason = $runError.Exception.Message
   if ($validationClaim -and -not $validationTerminalAttempted) {
     try { Write-ValidationReceipt -Status 'Failed' }
     catch { Write-Warning "Could not write failed validation receipt: $($_.Exception.Message)" }

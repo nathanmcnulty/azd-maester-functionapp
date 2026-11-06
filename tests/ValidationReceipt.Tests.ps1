@@ -3,6 +3,7 @@ BeforeAll {
 }
 Describe 'Immutable server execution ownership' {
   BeforeEach {
+    Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'src/Maester.ValidationProtocol.psm1') -Force
     $now=[DateTimeOffset]'2026-10-22T03:00:00Z'
     $context=[ordered]@{schemaVersion=2;validationId='11111111-1111-4111-8111-111111111111';siteName='func-test';storageAccountName='sttest';queueStorageAccountName='sthost';sourceSha256=('a'*64);configurationSha256=('b'*64);packageSha256=('c'*64);activeDeploymentId='22222222-2222-4222-8222-222222222222';tenantId='33333333-3333-4333-8333-333333333333';workloadIdentityId='44444444-4444-4444-8444-444444444444';runtimeVersion='7.6';deadlineUtc=$now.AddMinutes(1).ToString('o')}
     $store=[Collections.Generic.Dictionary[string,string]]::new()
@@ -50,6 +51,93 @@ Describe 'Immutable server execution ownership' {
     $context.siteName=@('func-test')
     {Assert-MaesterValidationContext $context}|Should -Throw '*scalar strings*'
     {ConvertFrom-MaesterValidationJson '{"validationId":"one","ValidationId":"two"}'}|Should -Throw '*duplicate*'
+  }
+  It 'writes bounded failure diagnostics in the same conditional terminal PUT without changing its v2 body' {
+    $claim=New-MaesterValidationClaim @parameters
+    $diagnostic=@{Counts=@{PassedCount=1;FailedCount=0;ErrorCount=1;InvestigateCount=0;SkippedCount=0;NotRunCount=0;TotalCount=2};ErrorTestIds=@('MT.1068');UniqueErrorTestIdCount=1;UnidentifiedErrorCount=0;PrivateMessage='must never serialize'}
+    $captured=[Collections.Generic.List[object]]::new()
+    # Other regression containers retain original-source fixture modules with
+    # the same name. Give this exact source copy a unique mock boundary.
+    $probePath=Join-Path $TestDrive ('ReceiptTransport'+[guid]::NewGuid().ToString('N')+'.psm1')
+    Copy-Item -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) 'src/Maester.ValidationProtocol.psm1') -Destination $probePath
+    $probe=Import-Module $probePath -PassThru -Force
+    Mock Invoke-WebRequest -ModuleName $probe.Name {
+      param($Uri,$Method,$Headers,$Body)
+      $captured.Add(@{uri=$Uri;method=$Method;headers=$Headers;body=[Text.Encoding]::UTF8.GetString($Body)})
+    }
+    try {
+    & $probe { param($claim,$diagnostic,$time) Complete-MaesterValidationClaim -Claim $claim -Status Failed -StorageAccountName sttest -Token synthetic -FailureDiagnostic $diagnostic -FailureReason assessment.maesterErrors -Now $time } $claim $diagnostic $now.AddSeconds(1)
+    $captured.Count | Should -Be 1
+    $captured[0].headers['If-None-Match'] | Should -BeExactly '*'
+    $captured[0].method | Should -BeExactly 'Put'
+    $summary=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($captured[0].headers['x-ms-meta-maester_failure_diagnostic']))
+    $summary | Should -Not -Match 'PrivateMessage|must never serialize|token|ScriptBlock'
+    ($summary|ConvertFrom-Json).Counts.ErrorCount | Should -Be 1
+    ($summary|ConvertFrom-Json).failureCode | Should -BeExactly 'assessment.maesterErrors'
+    ($summary|ConvertFrom-Json).ErrorTestIds[0] | Should -BeExactly 'MT.1068'
+    $body=$captured[0].body|ConvertFrom-Json -AsHashtable
+    $body.Count | Should -Be 7
+    $body.schemaVersion | Should -Be 2
+    $body.status | Should -BeExactly 'Failed'
+    $body.contextSha256 | Should -BeExactly $claim.contextSha256
+    Should -Invoke Invoke-WebRequest -ModuleName $probe.Name -Times 1 -Exactly
+    } finally { Remove-Module $probe -Force }
+  }
+  It 'retains only an unclassified code when a failure message has private contents' {
+    $claim=New-MaesterValidationClaim @parameters
+    $captured=[Collections.Generic.List[string]]::new()
+    $diagnosticWriter={param($uri,$token,$json,$diagnosticJson) $captured.Add($diagnosticJson)}
+    Complete-MaesterValidationClaim -Claim $claim -Status Failed -StorageAccountName sttest -Token synthetic -FailureReason 'private tenant token and request payload' -Writer $diagnosticWriter
+    $captured.Count | Should -Be 1
+    ($captured[0]|ConvertFrom-Json).failureCode | Should -BeExactly 'unclassified'
+    $captured[0] | Should -Not -Match 'private|tenant|token|payload'
+  }
+  It 'forwards the runner diagnostic to its terminal writer exactly once in a fresh process' {
+    $runner=Join-Path (Split-Path $PSScriptRoot -Parent) 'src/MaesterTimerTrigger/run.ps1'
+    $ast=[Management.Automation.Language.Parser]::ParseFile($runner,[ref]$null,[ref]$null)
+    $definition=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Write-ValidationReceipt'},$true).Extent.Text
+    $harness=@'
+$ErrorActionPreference='Stop'
+$validationClaim=@{status='Started'}
+$script:validationTerminalAttempted=$false
+$StorageAccountName='sttest'
+$validationFailureDiagnostic=@{Value=@{Counts=@{ErrorCount=1}};Reason='assessment.maesterErrors'}
+$script:attempts=0
+function Get-PlainToken { param($ResourceUrl) 'synthetic' }
+function Complete-MaesterValidationClaim {
+ param($Claim,$Status,$StorageAccountName,$Token,$FailureDiagnostic,$FailureReason)
+ $script:attempts++
+ $script:seen=@{code=$FailureReason;errors=$FailureDiagnostic.Counts.ErrorCount}
+}
+'@ + [Environment]::NewLine + $definition + [Environment]::NewLine + @'
+Write-ValidationReceipt -Status Failed
+$blocked=$false
+try { Write-ValidationReceipt -Status Failed } catch { $blocked=$_.Exception.Message -like 'Terminal evidence was already attempted*' }
+@{attempts=$script:attempts;seen=$script:seen;secondAttemptBlocked=$blocked}|ConvertTo-Json -Compress
+'@
+    $path=Join-Path $TestDrive 'receipt-forwarding.ps1'
+    Set-Content -LiteralPath $path -Value $harness
+    $output=& pwsh -NoProfile -NonInteractive -File $path 2>&1
+    $LASTEXITCODE | Should -Be 0
+    $value=($output -join [Environment]::NewLine)|ConvertFrom-Json
+    $value.attempts | Should -Be 1
+    $value.seen.code | Should -BeExactly 'assessment.maesterErrors'
+    $value.seen.errors | Should -Be 1
+    $value.secondAttemptBlocked | Should -BeTrue
+  }
+  It 'rejects invalid metadata before any terminal write for <_>' -ForEach @('identifier','count','success','inconsistent','duplicate') {
+    $claim=New-MaesterValidationClaim @parameters
+    $diagnostic=@{Counts=@{PassedCount=1;FailedCount=0;ErrorCount=1;InvestigateCount=0;SkippedCount=0;NotRunCount=0;TotalCount=2};ErrorTestIds=@('MT.1068');UniqueErrorTestIdCount=1;UnidentifiedErrorCount=0}
+    $status='Failed'
+    switch($_){
+      'identifier' {$diagnostic.ErrorTestIds=@('private-tenant-payload')}
+      'count' {$diagnostic.Counts.ErrorCount='1'}
+      'success' {$status='Succeeded'}
+      'inconsistent' {$diagnostic.Counts.TotalCount=3}
+      'duplicate' {$diagnostic.ErrorTestIds=@('MT.1068','MT.1068')}
+    }
+    {Complete-MaesterValidationClaim -Claim $claim -Status $status -StorageAccountName sttest -Token synthetic -FailureDiagnostic $diagnostic -Writer $writer}|Should -Throw '*diagnostic*'
+    $store.Count | Should -Be 1
   }
   It 'detects a tampered file in a packaged source inventory' {
     $dir=Join-Path $TestDrive 'inventory';New-Item -ItemType Directory $dir|Out-Null

@@ -209,6 +209,21 @@ control-plane `Stopped` state do not establish invocation completion. An absent
 terminal receipt remains `Unresolved`; the controller does not perform app stop
 or claim cancellation. Native containment still requires separate qualification.
 
+Failed terminal blobs include `maester_failure_diagnostic` metadata: Base64 JSON
+written in the same conditional PUT. It contains a whitelisted failure code
+(`unclassified` for other errors), plus validated counts and at most 32 public
+`MT.xxxx` case IDs when available. Raw error records, exception text and report
+contents are excluded. The schema-2 JSON body and controller result are unchanged.
+Console telemetry can be sampled or delayed; inspect metadata on the matching
+terminal blob instead of relying solely on logs. Older receipts may lack it.
+
+```powershell
+$blob = az storage blob show --subscription $subscriptionId --account-name $storageAccountName --container-name validation --name "$validationId.json" --auth-mode login -o json | ConvertFrom-Json
+if ($blob.metadata.maester_failure_diagnostic) {
+  [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($blob.metadata.maester_failure_diagnostic)) | ConvertFrom-Json
+}
+```
+
 For the optional postprovision validation hook, supply both
 `FUNCTION_VALIDATION_REQUEST_PATH` and `FUNCTION_VALIDATION_RECEIPT_PATH` in
 addition to `VALIDATE_FUNCTION_ON_PROVISION=true`. Source and offline test success

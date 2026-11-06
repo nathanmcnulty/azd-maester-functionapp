@@ -15,6 +15,7 @@ Describe 'Maester runner result boundary' {
     $harness = @'
 $ErrorActionPreference = 'Continue'
 $maesterInvokeParameters = @{}
+$validationFailureDiagnostic = @{ Value = $null; Reason = $null }
 Import-Module '__GATE__' -Force
 . '__FIXTURE__'
 $tempRoot = $env:RUNNER_TEST_TEMP_ROOT

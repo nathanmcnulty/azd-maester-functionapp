@@ -149,9 +149,14 @@ function Get-MaesterValidationConfigurationDigest {
 }
 
 function Send-MaesterValidationEvidence {
-  param([Parameter(Mandatory)][string]$Uri,[Parameter(Mandatory)][string]$Token,[Parameter(Mandatory)][string]$Json)
+  param([Parameter(Mandatory)][string]$Uri,[Parameter(Mandatory)][string]$Token,[Parameter(Mandatory)][string]$Json,[string]$DiagnosticJson)
   # Never retry: an unknown PUT outcome must preserve the request identity.
   $headers = @{Authorization="Bearer $Token";'x-ms-version'='2023-11-03';'x-ms-blob-type'='BlockBlob';'If-None-Match'='*'}
+  if ($DiagnosticJson) {
+    $bytes = [Text.Encoding]::UTF8.GetBytes($DiagnosticJson)
+    if ($bytes.Length -gt 2048) { throw 'Failure diagnostic exceeds its metadata bound.' }
+    $headers['x-ms-meta-maester_failure_diagnostic'] = [Convert]::ToBase64String($bytes)
+  }
   Invoke-WebRequest -Uri $Uri -Method Put -Headers $headers -Body ([Text.Encoding]::UTF8.GetBytes($Json)) -ContentType 'application/json' -TimeoutSec 30 -MaximumRetryCount 0 -MaximumRedirection 0 -ErrorAction Stop | Out-Null
 }
 
@@ -177,14 +182,45 @@ function New-MaesterValidationClaim {
 
 function Complete-MaesterValidationClaim {
   param([Parameter(Mandatory)][Collections.IDictionary]$Claim,[Parameter(Mandatory)][ValidateSet('Succeeded','Failed')][string]$Status,[Parameter(Mandatory)][string]$StorageAccountName,[Parameter(Mandatory)][string]$Token,
+    [Collections.IDictionary]$FailureDiagnostic,[string]$FailureReason,
     [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow,
-    [scriptblock]$Writer = { param($uri,$token,$json) Send-MaesterValidationEvidence -Uri $uri -Token $token -Json $json })
+    [scriptblock]$Writer = { param($uri,$token,$json,$diagnosticJson) Send-MaesterValidationEvidence -Uri $uri -Token $token -Json $json -DiagnosticJson $diagnosticJson })
   if ($Claim.status -cne 'Started') { throw 'Only the owning started claim can publish terminal evidence.' }
+  $diagnosticJson = $null
+  $diagnostic = [ordered]@{schemaVersion=1;failureCode='unclassified'}
+  $knownCodes = @('assessment.resultMissingOrAmbiguous','assessment.resultInvalid','assessment.invalidCount','assessment.countMismatch','assessment.maesterErrors','assessment.errorRecordsMissing','assessment.unclassifiedFailure','assessment.coreNotExecuted','assessment.junitInvalid','assessment.junitErrors','assessment.junitCountMismatch','assessment.reportMismatch','assessment.reportMissing')
+  if ($FailureReason -cin $knownCodes) { $diagnostic.failureCode=$FailureReason }
+  if ($FailureDiagnostic) {
+    if ($Status -cne 'Failed') { throw 'Only failed execution can include failure diagnostics.' }
+    # Normalize a small, public-only summary; never serialize result records,
+    # exception messages, file paths or arbitrary caller-supplied properties.
+    $counts = [ordered]@{}
+    foreach ($name in @('PassedCount','FailedCount','ErrorCount','InvestigateCount','SkippedCount','NotRunCount','TotalCount')) {
+      $value = $FailureDiagnostic.Counts[$name]
+      if ($value -isnot [int] -or $value -lt 0) { throw 'Invalid failure diagnostic count.' }
+      $counts[$name] = $value
+    }
+    $ids = @($FailureDiagnostic.ErrorTestIds)
+    if ($ids.Count -gt 32 -or @($ids | Where-Object { $_ -isnot [string] -or $_ -cnotmatch '^MT\.[0-9]{4}\z' }).Count) { throw 'Invalid failure diagnostic identifiers.' }
+    foreach ($name in @('UniqueErrorTestIdCount','UnidentifiedErrorCount')) {
+      $value = $FailureDiagnostic[$name]
+      if ($value -isnot [int] -or $value -lt 0 -or $value -gt $counts.ErrorCount) { throw 'Invalid failure diagnostic count.' }
+    }
+    $sum = 0L
+    foreach ($name in @('PassedCount','FailedCount','ErrorCount','InvestigateCount','SkippedCount','NotRunCount')) { $sum += $counts[$name] }
+    if ($counts.ErrorCount -eq 0 -or $sum -ne $counts.TotalCount -or
+        $FailureDiagnostic.UniqueErrorTestIdCount -lt $ids.Count -or
+        @($ids | Sort-Object -Unique).Count -ne $ids.Count) { throw 'Inconsistent failure diagnostic counts.' }
+    $diagnostic.Counts=$counts; $diagnostic.ErrorTestIds=$ids
+    $diagnostic.UniqueErrorTestIdCount=$FailureDiagnostic.UniqueErrorTestIdCount
+    $diagnostic.UnidentifiedErrorCount=$FailureDiagnostic.UnidentifiedErrorCount
+  }
+  if ($Status -ceq 'Failed') { $diagnosticJson=$diagnostic | ConvertTo-Json -Depth 4 -Compress }
   $receipt = [ordered]@{}
   foreach ($key in @('schemaVersion','validationId','invocationId','contextSha256','startedAt')) { $receipt[$key]=$Claim[$key] }
   $receipt.status=$Status
   $receipt.completedAt=$Now.ToUniversalTime().ToString('o')
-  & $Writer "https://$StorageAccountName.blob.core.windows.net/validation/$($Claim.validationId).json" $Token ($receipt | ConvertTo-Json -Compress)
+  & $Writer "https://$StorageAccountName.blob.core.windows.net/validation/$($Claim.validationId).json" $Token ($receipt | ConvertTo-Json -Compress) $diagnosticJson
 }
 
 Export-ModuleMember -Function Get-MaesterValidationHash,Get-MaesterValidationRuntimeVersion,ConvertFrom-MaesterValidationJson,Assert-MaesterValidationContext,Get-MaesterValidationContextJson,Get-MaesterValidationSourceDigest,Get-MaesterValidationHostQueueAccount,Get-MaesterValidationQueueMessage,Get-MaesterValidationConfigurationDigest,New-MaesterValidationClaim,Complete-MaesterValidationClaim
