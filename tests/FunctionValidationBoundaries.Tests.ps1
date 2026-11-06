@@ -96,7 +96,7 @@ Describe 'Actual server entrypoint boundaries' {
     @{schemaVersion=1;files=$files}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $package 'validation-source.json')
     Add-Content (Join-Path $module 'Az.Accounts.psm1') '# tampered'
     $context=[ordered]@{schemaVersion=2;validationId='11111111-1111-4111-8111-111111111111';siteName='func-test';storageAccountName='sttest';queueStorageAccountName='sthost';sourceSha256=('a'*64);configurationSha256=('b'*64);packageSha256=('c'*64);activeDeploymentId='22222222-2222-4222-8222-222222222222';tenantId='33333333-3333-4333-8333-333333333333';workloadIdentityId='44444444-4444-4444-8444-444444444444';runtimeVersion='7.6';deadlineUtc=[DateTimeOffset]::UtcNow.AddMinutes(1).ToString('o')}
-    {& (Join-Path $timer 'run.ps1') -Timer @{IsPastDue=$false} -TriggerMetadata @{sys=@{MethodName='MaesterValidationTrigger';RandGuid='77777777-7777-4777-8777-777777777777'}} -ValidationContext $context}|Should -Throw '*differs*'
+    {& (Join-Path $timer 'run.ps1') -Timer @{IsPastDue=$false} -TriggerMetadata @{FunctionName='MaesterValidationTrigger';InvocationId='77777777-7777-4777-8777-777777777777'} -ValidationContext $context}|Should -Throw '*differs*'
     Test-Path $marker|Should -BeFalse
   }
   It 'attempts terminal evidence only once after a lost success-write response' {

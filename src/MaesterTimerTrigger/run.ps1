@@ -163,8 +163,10 @@ if ($ValidationContext) {
   Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'Maester.ValidationProtocol.psm1') -Force -ErrorAction Stop
   Assert-MaesterValidationContext $ValidationContext | Out-Null
   $invocationGuid = [guid]::Empty
-  if (-not $TriggerMetadata -or $TriggerMetadata.sys.MethodName -ne 'MaesterValidationTrigger' -or
-      -not [guid]::TryParse([string]$TriggerMetadata.sys.RandGuid, [ref]$invocationGuid) -or $invocationGuid -eq [guid]::Empty) {
+  if (-not $TriggerMetadata -or $TriggerMetadata.FunctionName -isnot [string] -or
+      $TriggerMetadata.FunctionName -cne 'MaesterValidationTrigger' -or
+      ($TriggerMetadata.InvocationId -isnot [string] -and $TriggerMetadata.InvocationId -isnot [guid]) -or
+      -not [guid]::TryParseExact([string]$TriggerMetadata.InvocationId, 'D', [ref]$invocationGuid) -or $invocationGuid -eq [guid]::Empty) {
     throw 'Validation invocation metadata is missing or invalid.'
   }
   $validationInvocationId = $invocationGuid
