@@ -3,6 +3,7 @@
     {
       "name": "ValidationRequest",
       "type": "queueTrigger",
+      "dataType": "binary",
       "direction": "in",
       "queueName": "maester-validation",
       "connection": "AzureWebJobsStorage"

@@ -3,10 +3,14 @@
 # Timer-triggered Azure Function that runs Maester assessments.
 # Reads configuration from Function App application settings (environment variables).
 
-param($Timer, $TriggerMetadata, [Collections.IDictionary]$ValidationContext)
+param($Timer, $TriggerMetadata, [Collections.IDictionary]$ValidationContext, [switch]$RequireValidationContext)
 
 $ErrorActionPreference = 'Continue'
 $ConfirmPreference = 'None'
+
+if ($RequireValidationContext -and -not $ValidationContext) {
+  throw 'Validation context is required before assessment.'
+}
 
 # Global stopwatch for timing diagnostics
 $script:sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -166,6 +170,7 @@ if ($ValidationContext) {
   $validationInvocationId = $invocationGuid
   $validatedSourceDigest=Get-MaesterValidationSourceDigest -Root (Split-Path $PSScriptRoot -Parent)
   $validatedConfigurationDigest=Get-MaesterValidationConfigurationDigest -Settings ([Environment]::GetEnvironmentVariables('Process'))
+  Write-Step "Validation preflight: PowerShell=$($PSVersionTable.PSVersion); Source=$validatedSourceDigest; Configuration=$validatedConfigurationDigest"
   if((Get-MaesterValidationHostQueueAccount -Settings ([Environment]::GetEnvironmentVariables('Process'))) -cne $ValidationContext.queueStorageAccountName){throw 'Validation queue account differs from the actual host connection.'}
   if($validatedSourceDigest -cne $ValidationContext.sourceSha256 -or $validatedConfigurationDigest -cne $ValidationContext.configurationSha256 -or (Get-MaesterValidationRuntimeVersion) -cne $ValidationContext.runtimeVersion){throw 'Validation source, configuration or runtime differs before module execution.'}
 }

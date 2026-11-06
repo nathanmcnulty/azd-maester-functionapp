@@ -14,6 +14,7 @@ function Get-MaesterValidationRuntimeVersion {
 
 function ConvertFrom-MaesterValidationJson {
   param([Parameter(Mandatory)][string]$Json)
+  $ErrorActionPreference = 'Stop'
   if ([Text.Encoding]::UTF8.GetByteCount($Json) -gt 16384) { throw 'Validation JSON exceeds its bound.' }
   $document = [Text.Json.JsonDocument]::Parse($Json)
   try {
