@@ -2,3 +2,6 @@
 azd-components.lock.json text eol=lf
 scripts/Setup-PostDeploy.ps1 text eol=lf
 scripts/Maester-SetupConsent.psm1 text eol=lf
+tests/fixtures/maester-230/** text eol=lf
+src/MaesterTimerTrigger/run.ps1 text eol=lf
+src/Maester.TestCompatibility.psm1 text eol=lf

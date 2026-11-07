@@ -432,6 +432,12 @@ if (-not $testsPath) {
   throw "Could not locate Maester test files under module path '$moduleRoot'."
 }
 
+# Prepare a per-invocation copy: package files can be read-only and must remain
+# unchanged for source verification and other warm/concurrent invocations.
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'Maester.TestCompatibility.psm1') -Force -ErrorAction Stop
+$preparedTests = Initialize-MaesterAssessmentTests -SourcePath $testsPath -DestinationPath (Join-Path $tempRoot 'maester-tests')
+$testsPath = $preparedTests.TestsPath
+Write-Output ('MAESTER_TEST_COMPATIBILITY_V1:' + ($preparedTests.Compatibility | ConvertTo-Json -Depth 3 -Compress))
 Write-Step "Using Maester test path: $testsPath"
 
 $testFileCount = (Get-ChildItem -Path $testsPath -Recurse -Filter '*.Tests.ps1' -ErrorAction SilentlyContinue).Count
