@@ -36,6 +36,14 @@ This template uses the stable Maester module `2.3.0`. Shared azd hooks,
 permission setup, and the optional report web app are vendored from
 `nathanmcnulty/azd-reference` and recorded in `azd-components.lock.json`.
 
+Each assessment copies the bundled tests to its private temporary output folder
+before discovery. A hash-bound correction keeps the Maester 2.3.0 Conditional
+Access What-If user collections as arrays and permits genuinely empty contexts
+under Pester 6.2. It retains the existing test identities and Graph arguments;
+unknown source content fails closed. The installed module and package remain
+unchanged, and a `MAESTER_TEST_COMPATIBILITY_V1` record reports the original and
+effective test hashes. Other discovery failures still fail the assessment gate.
+
 The original multi-variant catalog remains available at
 [`nathanmcnulty/azd-maester`](https://github.com/nathanmcnulty/azd-maester) while
 the migration is being completed.
